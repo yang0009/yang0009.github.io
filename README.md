@@ -1,6 +1,6 @@
-# plainwhite
+# 个人博客搭建
 
-Simplistic jekyll portfolio-style theme for writers.
+先到网上找一个主题
 
 **Demo**: [samarsault.com](https://samarsault.com)
 
