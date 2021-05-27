@@ -1,0 +1,86 @@
+---
+layout: post
+title:  "交互式expect脚本灵活运用"
+date:   2021-05-27 17:00:30 +0530
+categories: Javascript NodeJS
+---
+需求: 最近公司新加入了很多新人,每个新人开发人员都需要一个openvpn账号才可以登入公司内网,按照之前的创建账号的效率肯定要累垮,所以考虑用自动化脚本自动创建,但是openvpn创建的过程是一个交互式过程,
+需要在控制台输入用户名称,密码,别名,然后需要确认(Y/N),所以这些是这个自动化脚本的难点,但是方法总比困难多,下面是一个代码案例
+首先第一步需要父进程bash:
+
+
+```
+source /etc/profile
+cd /etc/openvpn/client/easy-rsa/3.0.3/ && \
+echo "当前路径为: `pwd`"
+echo "初始密码为: $OPENVPN_PASSWD"
+
+# 初始化pki
+/usr/bin/expect -f /***/init_pki.exp $1 $OPENVPN_PASSWD  && \
+
+cd /etc/openvpn/easy-rsa/3.0.3/ && \
+echo "当前路径为: `pwd`"
+./easyrsa import-req /etc/openvpn/client/easy-rsa/3.0.3/pki/reqs/$1.req $1
+
+# 注册用户
+/usr/bin/expect -f /***/sign.exp $1 && \
+
+#下面是打包openvpn文件 
+mkdir /etc/openvpn/client/$1/ &&  cd $_ && \
+cp /etc/openvpn/easy-rsa/3.0.3/pki/issued/$1.crt . && \
+cp /etc/openvpn/client/easy-rsa/3.0.3/pki/private/$1.key .
+cp /etc/openvpn/easy-rsa/3.0.3/pki/ca.crt . && \
+cp ../lk/open.ovpn $1.ovpn && \
+sed -i s/lk/$1/g $1.ovpn && \
+
+```
+
+上面是主进程shell: `main.sh` 的代码,具体的路径根据情况而定;
+
+然后编写的是`init_pki.exp`脚本,这个脚本负责初始化用户秘钥,更新密钥对到openvpn服务器;
+
+代码如下:
+```
+#!/usr/bin/expect -f 
+# 这一步需要注意的是解析器为expect
+
+set USER [lindex $argv 0 ]
+set OPENVPN_PASSWD [lindex $argv 1]
+
+spawn ./easyrsa init-pki
+expect {
+	"Type" {
+		send "yes\r"
+	}
+}
+
+
+spawn ./easyrsa gen-req $USER
+expect {
+	"PEM" {send "$OPENVPN_PASSWD\r"; exp_continue}
+        "Verifying" {send "$OPENVPN_PASSWD\r"; exp_continue}
+        "Common" {send "\r"}
+}
+expect eof
+
+```
+代码出现的期望字段可以根据自己的情况而定,不要照抄!
+
+最后就是注册账号的交互脚本:
+
+```
+#!/usr/bin/expect -f
+# 位置参数会存入数组$argv, 与shell不一样
+set USER [lindex $argv 0]
+
+spawn ./easyrsa sign client $USER
+expect {
+        "yes" {
+                send "yes\r"
+        }
+}
+expect eof
+```
+
+最终执行的只是一句命令 `sh ./main.sh <user_name>` 即可,非常快速
+
