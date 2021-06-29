@@ -1,3 +1,4 @@
+---
 layout: post
 title:  "k8s上rabbitmq ack timeout问题定位和修复"
 date:   2021-06-30 16:50:36 +0530
@@ -6,6 +7,8 @@ categories: rabbitmq
 背景:最近因为服务器过期需要将旧的rabbitmq实例重新迁移,考虑到原有的rabbitmq是在一台2核4Gi内存的ecs上,然后计划容器化到k8s里面;在本地实践后没有问题直接上了测试集群,可能测试集群上测不到生产环境的应用场景导致上到生产环境出现ack timeout 的情况,因为之前没有接触到这种优化调优问题,因此记录一下.
 
 首先看一下我们的yaml 部署脚本
+
+
 ```
 apiVersion: apps/v1
 kind: Deployment
