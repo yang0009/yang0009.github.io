@@ -1,0 +1,127 @@
+layout: post
+title:  "k8s上rabbitmq ack timeout问题定位和修复"
+date:   2021-06-30 16:50:36 +0530
+categories: rabbitmq
+---
+背景:最近因为服务器过期需要将旧的rabbitmq实例重新迁移,考虑到原有的rabbitmq是在一台2核4Gi内存的ecs上,然后计划容器化到k8s里面;在本地实践后没有问题直接上了测试集群,可能测试集群上测不到生产环境的应用场景导致上到生产环境出现ack timeout 的情况,因为之前没有接触到这种优化调优问题,因此记录一下.
+
+首先看一下我们的yaml 部署脚本
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xk-rabbitmq
+  labels:
+    app: xk-rabbitmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xk-rabbitmq
+  template:
+    metadata:
+      labels:
+        app: xk-rabbitmq
+    spec:
+      imagePullSecrets:
+      - name: harbor-secret
+      containers:
+        - name: xk-rabbitmq
+          image: ***/***/rabbitmq:3.8.16
+          imagePullPolicy: Always
+          args: ["/opt/rabbitmq/init.sh"]
+          volumeMounts:
+          - name: init-script
+            mountPath: "/opt/rabbitmq/init.sh"
+            subPath: "init.sh" # subPath 字段表示不覆盖/opt/rabbitmq/下的文件
+          - name: rabbitmq-conf
+            mountPath: "/etc/rabbitmq/rabbitmq.conf"
+            subPath: "rabbitmq.conf" # 加入队列超时配置文件
+      volumes:
+      - name: init-script
+        configMap:
+          defaultMode: 511
+          name: init-script
+      - name: rabbitmq-conf
+        configMap:
+          defaultMode: 511
+          name: rabbitmq-conf
+```
+以上是部署到k8s集群的rabbitmq负载资源,镜像可以在dockerhub上拖.另外还需要创建几个configmap资源
+
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+#  namespace: xkool-baseline
+  name: init-script
+data:
+  init.sh: |
+    #!/bin/bash
+    # 挂起rabbitmq-server到后台
+    nohup rabbitmq-server 2>/dev/stdout &
+    while true
+    do
+       sleep 1
+       rabbitmqctl await_startup
+       if [[ $? == 0 ]]
+       then
+          echo "success"
+          break
+       fi
+    done
+    set -e 
+    RABBITMQ_USER1=***
+    RABBITMQ_USER2=***
+    RABBITMQ_PASSWD1=***
+    RABBITMQ_PASSWD2=***
+
+    # 创建vhost和user
+    rabbitmqctl add_user $RABBITMQ_USER1 $RABBITMQ_PASSWD1 
+    rabbitmqctl add_user $RABBITMQ_USER2 $RABBITMQ_PASSWD2
+    rabbitmqctl set_user_tags $RABBITMQ_USER1 administrator # 授与admin权限
+    for v in vhost1 vhost2 ;do rabbitmqctl add_vhost $v && \
+    rabbitmqctl set_permissions -p $v $RABBITMQ_USER1  ".*" ".*" ".*" ;
+    rabbitmqctl set_permissions -p $v $RABBITMQ_USER2  ".*" ".*" ".*" ;
+    done
+
+    # 启用插件
+    rabbitmq-plugins enable rabbitmq_management rabbitmq_web_stomp rabbitmq_web_stomp_examples
+    
+    #不让进程退出 
+    while true
+    sleep 5
+    do
+      pid=$(pidof /bin/sh)
+      if [ -z ${pid} ];then
+          nohup rabbitmq-server 2>/dev/stdout &
+      fi
+    done
+    #exec 'rabbitmq-server'
+
+```
+init-script cm 资源为rabbitmq 的一个初始化脚本,你会发现最后有个while 循环,为了不让前台这个pid 为1的sh 进程挂掉导致容器exit而做的操作,当然rabbitmq官方的镜像是用entrypoint.sh 实现的,你会发现其核心的代码也是为了保证pid 1这个进程不退出前台,而采用了exec $@ 让位;
+而我用command命令替换掉了dockerfile 的ENTRYPOINT 指令所以必须要这么搞,如果你有什么好的建议可以私信到我邮箱:973401678@qq.com!
+
+虽然上去到生产环境了,但是运行了一段时间遇到了一个报错,报错如下
+```
+pika.exceptions.ChannelClosedByBroker: (406, 'PRECONDITION_FAILED - consumer ack timed out on channel 1')
+```
+通过报错搜了一下,是超时设置导致的,默认是15分钟;如果客户端超过15分钟再去响应那么就出出现超时断开的情况,为什么会超时呢,之前的版本没有这个问题没有出现啊,经过一顿定位,可能跟k8s 资源限制有关,限制资源cpu水位导致服务不够算力而导致服务卡着,然后触发超时导致报错,这个限制刚好也是刚rabbitmq那段时间加上...结合了种种情况发现这些细节问题很容易导致定位的决策方向错误.
+好了,既然找到问题根源那么就设置一下超时吧,/etc/rabbitmq.conf 是rabbitmq的配置文件路径,默认是不创建的,如果需要设置需要自己手动添加...(这个有点坑)
+超时配置如下(一个字段...很简单)
+
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-conf
+data: 
+  rabbitmq.conf: |
+    # 10小时超时
+    consumer_timeout = 36000000
+```
+同样也把它放到cm 里面,挂载到rabbitmq pod上面!
+
+
+总结: 其实消息队列这种跟业务服务强相关的中间件调优是一个长期的工作,偶尔出现一次可以加深对它的理解.自己当初完全没有搭建过rabbitmq,初次报错有点措手不及,但解决问题的思路很重要!
