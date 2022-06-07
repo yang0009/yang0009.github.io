@@ -210,7 +210,7 @@ func gitPush(c *gin.Context) {
 		fmt.Println("md:", mj)
 		fmt.Println("text:", tj)
 		WetchatWebhook(mj) // 调用企业微信机器人接口
-		WetchatWebhook(tj) // 单独发送url
+		WetchatWebhook(tj) // 单独发送url,因为企业微信md类型模板的链接无法用默认浏览器直接跳转
 		c.String(http.StatusOK, "ok")
 	}
 }
