@@ -245,8 +245,8 @@ func main() {
 
 程序启动之前需要给环境变量
 ```
-export TOKEN_KEY=009473401a3b0851f6b65d4701644c7b770fb59f
-export URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a19cd3e4-34ae-4870-b32c-2eb9759e0349
+export TOKEN_KEY=009473401a3b0***fb59f
+export URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a19c***9
 ```
 
 dockerfile 构建镜像
