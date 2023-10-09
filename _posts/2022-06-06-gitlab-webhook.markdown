@@ -8,6 +8,7 @@ categories: golang
 > gitlab_webhook 事件样例: https://git.xkool.org/help/user/project/integrations/webhooks ,可以根据请求数据封装自定义信息
 总体思路:根据gitlab自带events事件,拿到请求数据再封装企业微信数据结构,然后构造webhook服务api,主要是在方法中实现请求企业微信机器人,到达通知目的
 下面是主进程逻辑
+
 ```
 package main
 
@@ -240,17 +241,13 @@ func main() {
 	router.POST("/send", gitPush)
 	_ = router.Run(":8079")
 }
-
 ```
-
 程序启动之前需要给环境变量
 ```
 export TOKEN_KEY=009473401a3b0***fb59f
 export URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a19c***9
 ```
-
 dockerfile 构建镜像
-
 ```
 ARG IMAGE=alpine:3.12
 FROM golang:1.16-alpine as builder
