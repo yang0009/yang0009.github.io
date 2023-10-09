@@ -43,9 +43,9 @@ type Textdata struct {
 // 找到需要@的人员对应手机号
 func phonelist(s string) string {
 	Someone := map[string]string{
-		"ns***":   "181***868",
-		"tr***":   "131***456",
-		"ss***":   "131***259",
+		"ns***":         "18127386881",
+		"tr***":   "131**456",
+		"ss***":   "13***259",
 	}
 	if v, ok := Someone[s]; ok {
 		fmt.Println(v)
