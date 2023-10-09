@@ -6,7 +6,7 @@ categories: golang
 ---
 背景: 开发需要在提交merge时触发一个通知.展示一些特定信息,方便开发及时知道mr状态.按照以往的开源设计软件,直接找文档查看相关api
 > gitlab_webhook 事件样例: https://git.xkool.org/help/user/project/integrations/webhooks ,可以根据请求数据封装自定义信息
-总体思路:根据gitlab自带events事件,拿到请求数据再封装企业微信数据结构,然后构造webhook服务api,主要是在方法中实现请求企业微信机器人,到达通知目的
+>总体思路:根据gitlab自带events事件,拿到请求数据再封装企业微信数据结构,然后构造webhook服务api,主要是在方法中实现请求企业微信机器人,到达通知目的
 下面是主进程逻辑
 
 ```
