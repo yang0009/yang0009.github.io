@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "golang 开发gitlab webhook服务,实现企业微信通知功能"
-date:   2021-06-06 18:44:23 +0530
+date:   2022-06-06 18:44:23 +0530
 categories: golang
 ---
 背景: 开发需要在提交merge时触发一个通知.展示一些特定信息,方便开发及时知道mr状态.按照以往的开源设计软件,直接找文档查看相关api
