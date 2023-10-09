@@ -1,268 +1,319 @@
 ---
 layout: post
-title:  "golang 开发gitlab webhook服务,实现企业微信通知功能"
-date:   2022-06-06 18:44:23 +0530
+title:  "golang 开发实现K8s自定义指标自动伸缩GPU的pod副本"
+date:   2023-09-06 22:13:20 +0530
 categories: golang
 ---
-背景: 开发需要在提交merge时触发一个通知.展示一些特定信息,方便开发及时知道mr状态.按照以往的开源设计软件,直接找文档查看相关api
-> gitlab_webhook 事件样例: https://git.xkool.org/help/user/project/integrations/webhooks ,可以根据请求数据封装自定义信息总体思路:根据gitlab自带events事件,拿到请求数据再封装企业微信数据结构,然后构造webhook服务api,主要是在方法中实现请求企业微信机器人,到达通知目的
+背景: 这个项目负责集群deployment根据第三方返回的负载指数来配置扩缩容,作用于火山引擎的VCI容器,实现了GPU服务器弹性伸缩,可以缓解高峰期服务压力,降低用户等待时间,提高用户体验
 
+记录一下开发主要的思路,以及遇到的坑
 
-下面是主进程逻辑
 ```
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"strings"
+	"strconv"
+	"time"
 
-	"github.com/gin-gonic/gin"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 )
 
-type Dataform struct {
-	Content string `json:"content"`
+var ThirdUrl = "http://***/internal/subtask/load"
+var KubeConfigPath = "./config"
+
+type Data struct {
+	LoadBalance float32 `json:"load_balance"`
 }
 
-type TextDataform struct {
-	Content             string   `json:"content"`
-	MentionedMobileList []string `json:"mentioned_mobile_list"`
+type ThirdPartyMetric struct {
+	Data Data
 }
 
-type Markdowndata struct {
-	Msgtype   string `json:"msgtype"`
-	*Dataform `json:"markdown"`
-}
-type Textdata struct {
-	Msgtype       string `json:"msgtype"`
-	*TextDataform `json:"text"`
+type BalanceAndReplicas struct {
+	LoadBalance    float32
+	Replicas       int32
+	SourceReplicas int32
 }
 
-// 找到需要@的人员对应手机号
-func phonelist(s string) string {
-	Someone := map[string]string{
-		"ns***":         "18127386881",
-		"tr***":   "131**456",
-		"ss***":   "13***259",
-	}
-	if v, ok := Someone[s]; ok {
-		fmt.Println(v)
-		return v
-	} else {
-		fmt.Println("Key Not Found")
-		return ""
-	}
-}
-
-// 找到需要被@的开发人员
-func getuser(g *Bodydata) string {
-	if g.ObjectAttributes.Action == "approved" && g.ObjectAttributes.LastCommit.Author.Name != "" {
-		return fmt.Sprintf("%v", g.ObjectAttributes.LastCommit.Author.Name)
-	} else if g.ObjectAttributes.Action == "open" && g.ObjectAttributes.Assignee.Name != "" {
-		return fmt.Sprintf("%v", g.ObjectAttributes.Assignee.Name)
-	} else {
-		return ""
-	}
-}
-
-// 序列化text模板
-func textjson(da string, at string) string {
-	a := phonelist(at)
-	t := &Textdata{
-		Msgtype: "text",
-		TextDataform: &TextDataform{
-			da,
-			[]string{fmt.Sprintf("%v", a)},
-		},
-	}
-	d, err := json.Marshal(t)
+// string转换成int类型
+func myAtoi(s string) int32 {
+	i, err := strconv.Atoi(s)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		panic(err)
 	}
-	return string(d)
+	return int32(i)
 }
 
-// 序列化md模板
-func mdjson(da string) string {
-	t := &Markdowndata{
-		Msgtype:  "markdown",
-		Dataform: &Dataform{da},
+// 根据负载均衡情况调整副本数
+func scalePod(service, namespace, add, reduce, max, defaultR string, loadbalance float32) BalanceAndReplicas {
+	cr, sr := setReplicas(service, namespace, add, reduce, max, defaultR, loadbalance)
+	brstruct := BalanceAndReplicas{
+		LoadBalance:    loadbalance,
+		Replicas:       cr,
+		SourceReplicas: sr,
 	}
-	d, err := json.Marshal(t)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
-	}
-	return string(d)
+	return brstruct
 }
 
-// 触发企业微信机器人
-func WetchatWebhook(s string) {
-	uri := os.Getenv("URL")
-	req, _ := http.NewRequest("POST", uri, strings.NewReader(s))
-	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return
-	}
-	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return
-	}
-	fmt.Println(res.StatusCode)
-	fmt.Println(body)
-}
-
-// md类型企业微信模板
-func template(g *Bodydata) string {
-	kind := g.ObjectKind
-	switch kind {
-	case "note1":
-		return fmt.Sprintf(`<font color="warning">Gitlab事件通知</font>。
-			>事件类型: <font color="red">%v</font>
-			>源分支: <font color="green">%v</font>
-			>目的分支: <font color="green">%v</font>
-			>Title: <font color="green">%v</font>
-			>描述: <font color="green">%v</font>
-			>更新时间: <font color="green">%v</font>
-			>MR地址: <font color="warning">%v</font>
-			>评论内容: <font color="comment">%v</font>
-			>评论人: <font color="comment">%v</font>
-			>评论时间: <font color="green">%v</font>
-			>提交人:<font color="comment">%v</font>
-			`, g.ObjectKind, g.MergeRequest.SourceBranch, g.MergeRequest.TargetBranch, g.MergeRequest.Title, g.MergeRequest.Description, g.MergeRequest.UpdatedAt, g.ObjectAttributes.URL, g.ObjectAttributes.Note, g.ObjectAttributes.AuthorID, g.ObjectAttributes.UpdatedAt, g.MergeRequest.LastCommit.Author.Name)
-	case "merge_request":
-		if g.ObjectAttributes.State != "merged" && !g.ObjectAttributes.WorkInProgress && g.ObjectAttributes.Action != "update" {
-			return fmt.Sprintf(
-				`%v <font color="warning">%v</font> [Merge Request](%V)
-			>分支: <font color="green">%v ---> %v</font>
-			>Title: <font color="green">%v</font>
-			>描述: <font color="green">%v</font>
-			>Merge状态: <font color="green">%v</font>`, g.User.Name, g.ObjectAttributes.Action, g.ObjectAttributes.URL, g.ObjectAttributes.SourceBranch, g.ObjectAttributes.TargetBranch, g.ObjectAttributes.Title, g.ObjectAttributes.Description, g.ObjectAttributes.MergeStatus)
+// 根据负载均衡计算副本数
+func setReplicas(service, namespace, add, reduce, max, defaultR string, loadbalance float32) (int32, int32) {
+	sr := getReplicas(service, namespace)
+	var cr int32
+	klog.Info(service+" current replicas is ", *sr)
+	ad := myAtoi(add)
+	rd := myAtoi(reduce)
+	ma := myAtoi(max)
+	dr := myAtoi(defaultR)
+	if loadbalance > 0.8 {
+		// 不允许超过最大ma的情况下,负载均衡大于0.8,需要增加副本,默认增加2个
+		if *sr <= int32(ma) {
+			if *sr+int32(ad) <= int32(ma) {
+				cr := *sr + int32(ad)
+				klog.Info(service+" replicas increased to ", cr)
+				return cr, *sr
+			} else {
+				cr = int32(ma)
+				klog.Info(service+" replicas set to max ", cr)
+				return cr, *sr
+			}
 		}
-		return ""
-	case "build1":
-		if g.BuildStatus == "failed" {
-			return fmt.Sprintf(`<font color="warning">Gitlab事件通知</font>。
-			>事件类型: <font color="red">%v</font>
-			>构建项目: <font color="green">%v</font>
-			>构建状态: <font color="warning">%v</font>
-			>构建开始时间: <font color="green">%v</font>
-			>构建结束时间: <font color="green">%v</font>
-			>commIt_id: <font color="green">%v</font>
-			>提交人: <font color="green">%v</font>
-			`, g.ObjectKind, g.ProjectName, g.BuildStatus, g.Commit.StartedAt, g.Commit.FinishedAt, g.Commit.ID, g.Commit.AuthorName)
+	} else if loadbalance < 0.5 {
+		// 负载均衡小于0.5,需要根据源副本数减少副本,默认减少1个
+		if *sr >= int32(rd)+int32(dr) {
+			cr := *sr - int32(rd)
+			klog.Info(service+" replicas reduced to ", cr)
+			return cr, *sr
+		} else {
+			cr := int32(dr)
+			klog.Info(service+" current replicas is already at minimum ", cr)
+			return cr, *sr
 		}
-		return ""
-	default:
-		return ""
+	} else {
+		cr = *sr
+		return cr, *sr
 	}
+	return cr, *sr
 }
 
-// text 类型模板
-func templatetext(g *Bodydata) string {
-	kind := g.ObjectKind
-	switch kind {
-	case "merge_request":
-		if g.ObjectAttributes.State != "merged" && !g.ObjectAttributes.WorkInProgress && g.ObjectAttributes.Action != "update" {
-			return g.ObjectAttributes.URL
+// 获取负载
+func getLoadBalance(url string) float32 {
+	var loadbalance float32
+	resp, err := http.Get(url)
+	if err != nil {
+		klog.Errorf("failed to get url %s, error: %v", url, err)
+		return 0.6	// 当获取负载超时的时候,0.6的值确证不修改副本
+	}
+	defer resp.Body.Close()
+	body, _ := ioutil.ReadAll(resp.Body)
+	klog.Infof(" third party metric" + string(body))
+	metric := &ThirdPartyMetric{}
+	json.Unmarshal(body, metric)
+	loadbalance = metric.Data.LoadBalance
+	klog.Infof(url+" load balance is %f", loadbalance)
+	return loadbalance
+}
+
+type patch struct {
+	Op    string      `json:"op"`
+	Path  string      `json:"path"`
+	Value interface{} `json:"value,omitempty"`
+}
+
+// 更新deployment的replicas数量
+func updateDeploy(service, namespace string, replicas int32) error {
+	rps := getReplicas(service, namespace)
+	// 如果副本数不变则不需要更新
+	if replicas == *rps {
+		klog.Info(service + " replicas does not need to be updated")
+		return nil
+		// 副本数小于零则报错
+	} else if replicas < 0 {
+		klog.Infof("Replicas number should be greater than 0, current value: %d", replicas)
+		return fmt.Errorf("replicas number should be greater than 0")
+	} else {
+		var patchs []patch
+		config := initClient()
+		clientset, err := kubernetes.NewForConfig(config)
+		if err != nil {
+			panic(err.Error())
 		}
-		return ""
-	default:
-		return ""
+		klog.Info(service + " update replicas " + fmt.Sprint(replicas))
+		replicaPatch := patch{Op: "replace", Path: "/spec/replicas", Value: &replicas}
+		patchs = append(patchs, replicaPatch)
+		patchsdata, _ := json.Marshal(patchs)
+		klog.Info(string(patchsdata))
+		patchresult, err := clientset.AppsV1().Deployments(namespace).Patch(context.TODO(), service, types.PatchType(types.JSONPatchType), patchsdata, metav1.PatchOptions{})
+		if err != nil {
+			klog.Info(err)
+		} else {
+			klog.Info("Successful update replicas " + fmt.Sprint(*patchresult.Spec.Replicas))
+		}
+		return nil
 	}
 }
 
-// 请求函数
-func gitPush(c *gin.Context) {
-	var bodydata = &Bodydata{}
-	matched, _ := VerifySignature(c)
-	if !matched {
-		err := "Token did not match"
-		c.String(http.StatusForbidden, err)
-		fmt.Println(err)
-		return
-	}
-	fmt.Println("Token is matched ~")
-	// >>>>>>>>>>>>>>>>>
-	body, err := c.GetRawData()
+// 获取副本数
+func getReplicas(service, namespace string) *int32 {
+	config := initClient()
+	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		fmt.Println("error:", err)
-		return
+		panic(err.Error())
 	}
-	err = json.Unmarshal(body, bodydata) // 解析完request body 数据
+	deployment, err := clientset.AppsV1().Deployments(namespace).Get(context.TODO(), service, metav1.GetOptions{})
 	if err != nil {
-		fmt.Println("error:", err)
-		return
+		panic(err)
+	}
+	r := deployment.Spec.Replicas
+
+	return r
+}
+
+// 初始化K8s客户端
+func initClient() *rest.Config {
+	if len(os.Getenv("KUBECONFIG_PATH")) > 1 {
+		KubeConfigPath := os.Getenv("KUBECONFIG_PATH")
+		config, err := clientcmd.BuildConfigFromFlags("", KubeConfigPath)
+		if err != nil {
+			panic(err)
+		}
+		return config
 	} else {
-		md := template(bodydata)
-		text := templatetext(bodydata)
-		user := getuser(bodydata)
-		fmt.Println("user=", user)
-		fmt.Println("md=", md)
-		fmt.Println("text=", text)
-		tj := textjson(text, user)
-		mj := mdjson(md)
-		fmt.Println("md:", mj)
-		fmt.Println("text:", tj)
-		WetchatWebhook(mj) // 调用企业微信机器人接口
-		WetchatWebhook(tj) // 单独发送url,因为企业微信md类型模板的链接无法用默认浏览器直接跳转
-		c.String(http.StatusOK, "ok")
+		config, err := clientcmd.BuildConfigFromFlags("", KubeConfigPath)
+		if err != nil {
+			panic(err)
+		}
+		return config
 	}
 }
 
-// 验证token
-func VerifySignature(c *gin.Context) (bool, error) {
-	// Get Header with X-Hub-Signature
-	XLibToken := c.GetHeader("X-Gitlab-Token")
-	signature := GetToken("TOKEN_KEY")
-	fmt.Println(signature)
-	return XLibToken == signature, nil
+// 同步扩缩容
+func syncScale(brchan chan BalanceAndReplicas, deploy, ns, add, reduce, max, defaultR, t string) {
+	// Get a channel to receive messages on
+	ti, err := strconv.Atoi(t)
+	if err != nil {
+		panic(err)
+	}
+	go getBalanceAndReplicasChan(deploy, ns, add, reduce, max, defaultR, brchan, time.Duration(ti)*time.Minute)
+	for {
+		select {
+		case br, ok := <-brchan:
+			if !ok {
+				klog.Info("Balance and replicas channel closed")
+			}
+			klog.Infof("\n当前负载为: %f\n源副本数为: %d\n推荐副本数为: %d\n增加步进为: %s\n减少步进为: %s\n最大副本数为: %s\n默认副本数为: %s\n执行时间间隔为: %sMin\n", br.LoadBalance, br.SourceReplicas, br.Replicas, add, reduce, max, defaultR, t)
+			// Sync replicas to Kubernetes
+			err := updateDeploy(deploy, ns, br.Replicas)
+			if err != nil {
+				klog.Errorf("Failed to update replicas: %v", err)
+			}
+		}
+	}
 }
 
-// 从环境变量获取token
-func GetToken(e string) string {
-	env := os.Getenv(e)
-	if env != "" {
-		fmt.Printf("from os get successfully env!, %s=%s", e, env)
-	} else {
-		fmt.Printf("%s env not found", e)
+func getBalanceAndReplicasChan(service, namespace, addR, reduceR, max, defaultR string, brchan chan BalanceAndReplicas, duration time.Duration) {
+	//获取负载参数管道,默认每隔5分钟获取一次负载均衡参数
+	klog.Info("Waiting for time duration ......")
+	for {
+		select {
+		case <-time.After(duration):
+			//优先获取环境变量中的ThirdUrl配置
+			var url string
+			if len(os.Getenv("ThirdUrl")) > 1 {
+				url = os.Getenv("ThirdUrl")
+				klog.Infof("Using ThirdUrl from environment variable: %s", url)
+				loadbalance := getLoadBalance(url)
+				b := scalePod(service, namespace, addR, reduceR, max, defaultR, loadbalance)
+				brchan <- b
+			} else {
+				klog.Infof("Using  Default ThirdUrl: %s", ThirdUrl)
+				loadbalance := getLoadBalance(ThirdUrl)
+				b := scalePod(service, namespace, addR, reduceR, max, defaultR, loadbalance)
+				brchan <- b
+			}
+		}
 	}
-	return env
+}
+
+// 传参处理函数
+func runWithFlag() {
+	var brchan = make(chan BalanceAndReplicas)
+	var deploy, ns, ad, rd, ma, dr, min string
+	flag.StringVar(&deploy, "d", "webui", "The name of the deployment to sync replicas for. default: webui")
+	flag.StringVar(&ns, "n", "aicloud", "The namespace of the deployment. default: aicloud")
+	flag.StringVar(&ad, "ad", "3", "The number of replicas to add on scale up. default: 3")
+	flag.StringVar(&rd, "rd", "1", "The number of replicas to reduce on scale down. default: 1")
+	flag.StringVar(&ma, "ma", "20", "The maximum number of replicas allowed. default: 20")
+	flag.StringVar(&dr, "dr", "0", "The default number of replicas if no scale is needed. default: 0")
+	flag.StringVar(&min, "t", "5", "The minimum number of minutes between scaling operations. deault: 5")
+	flag.Parse()
+	syncScale(brchan, deploy, ns, ad, rd, ma, dr, min)
 }
 
 func main() {
-	router := gin.Default()
-	router.POST("/send", gitPush)
-	_ = router.Run(":8079")
+	runWithFlag()
 }
 ```
-程序启动之前需要给环境变量
-```
-export TOKEN_KEY=009473401a3b0***fb59f
-export URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a19c***9
-```
+
+主函数逻辑: 获取自定义接口函数的负载均衡值, 我这里使用的后端的返回负载值的接口,然后根据负载均衡值计算出副本数,最后更新副本数,同时要实现适当调整时间间隔, 避免一直处于扩缩容的触发状态,达到自动扩缩容的效果.同时灵活调整副本数从而提升为命令行参数,方便动态调整步进.
+
 dockerfile 构建镜像
 ```
 ARG IMAGE=alpine:3.12
-FROM golang:1.16-alpine as builder
-RUN mkdir ${GOPATH}/src/eventserver
-WORKDIR ${GOPATH}/src/
-ENV  GOPROXY https://goproxy.io,direct
+
+FROM golang:1.20-alpine as builder
+WORKDIR ${GOPATH}/src/cusme
+ENV  GOPROXY https://goproxy.cn,direct
 COPY . ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/eventserver
+RUN CGO_ENABLED=0 GOOS=linux go mod tidy && go build -o /usr/bin/cusme
 
 FROM ${IMAGE}
-
+WORKDIR /app
 RUN  sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories \
       &&  apk add --no-cache bash openssl curl
-COPY --from=builder /usr/bin/eventserver /usr/bin/
-COPY . ./
-RUN chmod +x ./start.sh
-ENTRYPOINT ["bash", "-c", "./start.sh"]
+COPY --from=builder /usr/bin/cusme /app
+COPY . /app
+ENTRYPOINT ["/app/cusme"]
 ```
+
+k8s部署文件
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cusme
+  namespace: sre
+spec:
+  selector:
+    matchLabels:
+      app: cusme
+  template:
+    metadata:
+      labels:
+        app: cusme
+    spec:
+      containers:
+      - env:
+        - name: ThirdUrl
+          value: "http://***/internal/subtask/load"
+        image: cusme:1.0.0
+        args: ["-t", "1", "-n", "***", "-d", "***", "-ad", "3", "-rd", "1", "-dr", "0"]
+        imagePullPolicy: Always
+        name: cusme-clouddev
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: oci-secret
+      restartPolicy: Always
+```
+cusme 为控制器, 副本数为1, 镜像为构建好的镜像, 启动参数为自定义参数, 启动命令为自定义参数, 启动策略为Always,保证控制器的正常运行.
