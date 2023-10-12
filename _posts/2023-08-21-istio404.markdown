@@ -4,8 +4,9 @@ title:  "关于一次istio ingressgateway 访问404异常的排查"
 date:   2023-08-21 17:48:18 +0530
 categories: istio
 ---
-背景: 客户有一天反馈网页某个接口返回404, 排查了一下原因是因为istio ingressgateway 访问404, 因为接口调用的domain是属于外部集群,内部集群通过ServiceEntry访问不到, 但这个配置很久没有改动过, 排查了一下istio ingressgateway 的日志, 发现日志显示NR,一般NR状态为配置路由无法匹配触发的,根据以往的经验先看网关的配置
-***
+背景: 客户有一天反馈网页某个接口返回404, 排查了一下原因是因为istio ingressgateway 访问404, 因为接口调用的domain是属于外部集群,内部集群通过ServiceEntry访问不到, 但这个配置很久没有改动过, 排查了一下istio ingressgateway 的日志, 发现日志显示NR,一般NR状态为配置路由无法匹配触发的,根据以往的经验先看网关的配置  
+
+***  
 # 排查过程
 先看一下日志  
 {"request_id":"5c960fda-9b50-4a00-9285-55fa0ca2350b","x_b3_traceid":"7bb469ef24a7abab4930f579e8aff0b5","method":"GET","response_flags":"NR","protocol":"HTTP/1.1","route_name":null,"start_time":"2023-09-12T02:46:46.444Z","duration":0,"bytes_sent":0,"upstream_host":null,"istio_policy_status":n
@@ -39,7 +40,7 @@ Safari/537.36","downstream_local_address":"192.168.18.71:443","upstream_local_ad
 
 但是很奇怪网关的配置确实是有的(只看关键配置)  
 ```
-***
+...
 spec:
   hosts:
     - crccre.xkool.org
@@ -54,7 +55,7 @@ spec:
             host: www.xkool.ai
             port:
               number: 443
-***
+...
 ```
 
 当访问 /api/koolplan 时，网关会将请求转发到 www.xkool.ai:443，然后我们接着从www.xkool.ai 集群查看配置  
@@ -92,6 +93,7 @@ spec:
         authority: www.xkool.ai
 ...
 ```
-***
+  
+  
 # 总结
 存在即合理,问题的触发可能与之前集群迁移到腾讯云的操作有关,之前的gateway是单独一个,后面为了解耦,将gateway拆分成两个,至于为什么很久才暴露问题,可能是客户使用这个接口的功能频率不高,后面建议服务还是统一在本地管理,尽量不直接转发到外部服务上.
