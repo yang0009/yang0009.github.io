@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "关于一次istio ingressgateway 访问404异常的排查"
-date:   2022-08-11 14:42:10 +0530
+date:   2023-08-21 17:48:18 +0530
 categories: istio
 ---
 背景: 客户有一天反馈网页某个接口返回404, 排查了一下原因是因为istio ingressgateway 访问404, 因为接口调用的domain是属于外部集群,内部集群通过ServiceEntry访问不到, 但这个配置很久没有改动过, 排查了一下istio ingressgateway 的日志, 发现日志显示NR,一般NR状态为配置路由无法匹配触发的,根据以往的经验先看网关的配置
