@@ -9,10 +9,11 @@ categories: istio
 ***  
 # 排查过程
 先看一下日志  
+```
 {"request_id":"5c960fda-9b50-4a00-9285-55fa0ca2350b","x_b3_traceid":"7bb469ef24a7abab4930f579e8aff0b5","method":"GET","response_flags":"NR","protocol":"HTTP/1.1","route_name":null,"start_time":"2023-09-12T02:46:46.444Z","duration":0,"bytes_sent":0,"upstream_host":null,"istio_policy_status":n
 ull,"response_code":404,"downstream_remote_address":"1--:57232","bytes_received":0,"requested_server_name":"www.xkool.ai","upstream_service_time":null,"upstream_cluster":null,"upstream_transport_failure_reason":null,"x_forwarded_for":"113.87.80.214,119.91.194.124","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 
 Safari/537.36","downstream_local_address":"192.168.18.71:443","upstream_local_address":null,"path":"/api--","authority":"crccre.xkool.org"}
-
+```
 访问日志中，"authority":"crccre.xkool.org" 表示请求 http 的 host 为 crccre.xkool.org （Authority = Host:Port）；requested_server_name 的值为 www.xkool.ai ，即请求的SNI ，下面是 envoy 文档中对 requested_server_name 字段的解释:  
 ![avatar](/assets/images/istio/server_name.png)
 
