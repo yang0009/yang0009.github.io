@@ -9,43 +9,37 @@ categories: istio
 
 
 # 排查过程
-先看一下日志
+先看一下日志  
 {"request_id":"5c960fda-9b50-4a00-9285-55fa0ca2350b","x_b3_traceid":"7bb469ef24a7abab4930f579e8aff0b5","method":"GET","response_flags":"NR","protocol":"HTTP/1.1","route_name":null,"start_time":"2023-09-12T02:46:46.444Z","duration":0,"bytes_sent":0,"upstream_host":null,"istio_policy_status":n
 ull,"response_code":404,"downstream_remote_address":"119.91****:57232","bytes_received":0,"requested_server_name":"www.xkool.ai","upstream_service_time":null,"upstream_cluster":null,"upstream_transport_failure_reason":null,"x_forwarded_for":"113.87.80.214,119.91.194.124","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 
 Safari/537.36","downstream_local_address":"192.168.18.71:443","upstream_local_address":null,"path":"/api/***","authority":"crccre.xkool.org"}
 
-访问日志中，"authority":"crccre.xkool.org" 表示请求 http 的 host 为 crccre.xkool.org （Authority = Host:Port）；requested_server_name 的值为 www.xkool.ai ，即请求的SNI ，下面是 envoy 文档中对 requested_server_name 字段的解释：
+访问日志中，"authority":"crccre.xkool.org" 表示请求 http 的 host 为 crccre.xkool.org （Authority = Host:Port）；requested_server_name 的值为 www.xkool.ai ，即请求的SNI ，下面是 envoy 文档中对 requested_server_name 字段的解释:  
 ![avatar](/assets/images/istio/server_name.png)
 
 下面在本地模拟向 服务端 IngressGateway 发起请求，请求中，host 故意设置为跟请求中的域名不同。由于请求是 https 请求，所以请求的数据是通过 tls 加密的，tls 中使
-用的服务名是“www.xkool.ai”（即 SNI），而 http 协议的 host 为“crccre.xkool.org”，从下面的调试信息中可以看到
+用的服务名是“www.xkool.ai”（即 SNI），而 http 协议的 host 为“crccre.xkool.org”，从下面的调试信息中可以看到  
 ![avatar](/assets/images/istio/test.png)
 
-然后dump 出来的配置如下
+然后dump 出来的配置如下  
 ![avatar](/assets/images/istio/config_dump1.png)
 ![avatar](/assets/images/istio/config_dump2.png)
-配置中，443 端口的监听器是通过 filter_chain_match 中的信息来选择请求是否进入该
-filter_chain，以上图为例：
-如果请求的 server_name 跟“*.xkool.org” 匹配，则采用名为 "https.443.org-s.org￾gateway.istio-system" 的路由配置；
-如果请求的 server_name 跟“*.xkool.ai” 或“xkool.ai”匹配，则采用名为"https.443.ais.ai-gateway.istio-system" 的路由配置
+配置中，443 端口的监听器是通过 filter_chain_match 中的信息来选择请求是否进入该filter_chain，以上图为例：  
+如果请求的 server_name 跟“*.xkool.org” 匹配，则采用名为 "https.443.org-s.org￾gateway.istio-system" 的路由配置；  
+如果请求的 server_name 跟“*.xkool.ai” 或“xkool.ai”匹配，则采用名为"https.443.ais.ai-gateway.istio-system" 的路由配置  
 下图是 envoy 文档中，对 service_names 字段的解释（用的是 SNI）。在客户的请求中，由于 SNI 为“www.xkool.ai”，所以会选用"https.443.ais.ai-gateway.istio-system" 路
-由配置。
-
-下图是 envoy 文档中，对 service_names 字段的解释（用的是 SNI）。在客户的请求
-中，由于 SNI 为“www.xkool.ai”，所以会选用"https.443.ais.ai-gateway.istio-system" 路
-由配置。
+由配置。  
 ![avatar](/assets/images/istio/envoy.png)
 
-下图是"https.443.ais.ai-gateway.istio-system"路由配置的具体信息，在路由配置中，包含多个 virtual_host，每个 virtual_host 对应一组 host（匹配 domains 字段）相关的路由配置。envoy 是通过 http 请求的 host 来选择使用 virtual_host 中的配置
+下图是"https.443.ais.ai-gateway.istio-system"路由配置的具体信息，在路由配置中，包含多个 virtual_host，每个 virtual_host 对应一组 host（匹配 domains 字段）相关的路由配置。envoy 是通过 http 请求的 host 来选择使用 virtual_host 中的配置  
 ![avatar](/assets/images/istio/xkool-ai.png)
 
-
 下图是 envoy 文档中对 domain 字段的解释，由于客户的请求中，authority 为`crccre.xkool.org`，无法匹配路由配置中的任何 domain 信息，所以出现了找不到路由
-的报错
+的报错  
 ![avatar](/assets/images/istio/istio-domain.png)
 
 
-但是很奇怪网关的配置确实是有的(只看关键配置)
+但是很奇怪网关的配置确实是有的(只看关键配置)  
 ```
 ***
 spec:
@@ -65,7 +59,7 @@ spec:
 ***
 ```
 
-当访问 /api/koolplan 时，网关会将请求转发到 www.xkool.ai:443，然后我们接着从www.xkool.ai 集群查看配置
+当访问 /api/koolplan 时，网关会将请求转发到 www.xkool.ai:443，然后我们接着从www.xkool.ai 集群查看配置  
 
 ```
 spec:
@@ -77,10 +71,10 @@ spec:
     - istio-system/ai-gateway
     - istio-system/org-gateway
 ```
-问题出在这里,两个gateway会引发冲突,为什么??
-从关键结果来分析确实导致了问题的产生,就是无法理解为什么两个gateway会触发无法找到路由的问题
-既然找到了问题的原因,那就要解决问题了, 解决方法就是将两个gateway的配置合并, 这样就不会有冲突了
-或者添加一个rewrite配置,将请求转发到正确的服务上
+问题出在这里,两个gateway会引发冲突,为什么??  
+从关键结果来分析确实导致了问题的产生,就是无法理解为什么两个gateway会触发无法找到路由的问题  
+既然找到了问题的原因,那就要解决问题了, 解决方法就是将两个gateway的配置合并, 这样就不会有冲突了  
+或者添加一个rewrite配置,将请求转发到正确的服务上  
 ```
 ...
   hosts:
