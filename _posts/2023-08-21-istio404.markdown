@@ -8,7 +8,7 @@ categories: istio
 
 
 
-#排查时间线
+# 排查过程
 先看一下日志
 {"request_id":"5c960fda-9b50-4a00-9285-55fa0ca2350b","x_b3_traceid":"7bb469ef24a7abab4930f579e8aff0b5","method":"GET","response_flags":"NR","protocol":"HTTP/1.1","route_name":null,"start_time":"2023-09-12T02:46:46.444Z","duration":0,"bytes_sent":0,"upstream_host":null,"istio_policy_status":n
 ull,"response_code":404,"downstream_remote_address":"119.91****:57232","bytes_received":0,"requested_server_name":"www.xkool.ai","upstream_service_time":null,"upstream_cluster":null,"upstream_transport_failure_reason":null,"x_forwarded_for":"113.87.80.214,119.91.194.124","user_agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 
@@ -101,4 +101,5 @@ spec:
 ...
 ```
 
-总结:存在即合理,问题的触发可能与之前集群迁移到腾讯云的操作有关,之前的gateway是单独一个,后面为了解耦,将gateway拆分成两个,至于为什么很久才暴露问题,可能是客户使用这个接口的功能频率不高,后面建议服务还是统一在本地管理,尽量不直接转发到外部服务上.
+# 总结
+存在即合理,问题的触发可能与之前集群迁移到腾讯云的操作有关,之前的gateway是单独一个,后面为了解耦,将gateway拆分成两个,至于为什么很久才暴露问题,可能是客户使用这个接口的功能频率不高,后面建议服务还是统一在本地管理,尽量不直接转发到外部服务上.
