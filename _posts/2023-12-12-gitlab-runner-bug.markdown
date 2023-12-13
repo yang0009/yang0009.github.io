@@ -42,4 +42,4 @@ script:
 ```
 
 # 问题严重性: 严重
-# 总结:如果服务是对外公网可访问,那么通过http://domain.example/.git/config 可以直接拿到git仓库信息,如果是内网服务,那么通过http://domain.example/git/config 就无法访问到git仓库信息,所以需要在gitlab-runner rsync命令中增加 --exclude=".git" 等参数,这样就可以避免直接访问到.git/config 文件
+总结:如果服务是对外公网可访问,那么通过http://domain.example/.git/config 可以直接拿到git仓库信息,如果是内网服务,那么通过http://domain.example/git/config 就无法访问到git仓库信息,所以需要在gitlab-runner rsync命令中增加 --exclude=".git" 等参数,这样就可以避免直接访问到.git/config 文件
