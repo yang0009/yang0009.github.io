@@ -4,7 +4,7 @@ title:  "gitlab-runner cp命令使用需要注意的几个问题"
 date:   2023-12-12 15:26:23 +0530
 categories: gitlab-runner
 ---
-# 背景
+背景
 gitlab-runner cp命令在gitlab-runner 使用中尽量不要直接cp 全部文件到部署目录下, 如果当前仓库文件是官网首页,如果是nginx部署代理静态页面,那么 root指令设置的是部署目录,那么当前的目录有可能会直接访问到.git/config 文件
 
 
