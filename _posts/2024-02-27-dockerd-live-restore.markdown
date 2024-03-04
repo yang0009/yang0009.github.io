@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "dockerd 如何理解live restore设置"
-date:   2023-02-27 15:26:23 +0530
+date:   2024-02-27 15:26:23 +0530
 categories: dockerd
 ---
 背景:
