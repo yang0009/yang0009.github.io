@@ -4,33 +4,28 @@ title:  "windows 后台进程如何设置Start-job指令"
 date:   2024-03-04 12:26:23 +0530
 categories: dockerd
 ---
-背景:
+# 背景
 pycharm terminal 启动 长时间运行会导致pychram崩溃，导致服务挂掉，改进为start-job 命令发布后端服务
 
-步骤：
-1： 开启powershell 管理员模式
-2：get-job 查看后台job 
+# 步骤
+1： 开启powershell 管理员模式     
+2：get-job 查看后台job     
 3：启动job  
-	start-job ****
-4: 停止job
-     	strop-job -Id ***
-5: 重启job
-	没有重启命令；按照3，4步骤重新走一遍
+	start-job ****  
+4: 停止job  
+     	strop-job -Id ***  
+5: 重启job  
+	没有重启命令；按照3，4步骤重新走一遍  
 
 # 启动命令 
-Start-job -Name test2  -ScriptBlock { Set-Location C:\Users\test_1\Desktop\test2; python .\project_server\server.py >> "C:\Users\test_1\Desktop\logs\test2.log"}
+```
+  Start-job -Name test2  -ScriptBlock { Set-Location C:\Users\test_1\Desktop\test2; python .\project_server\server.py >> "C:\Users\test_1\Desktop\logs\test2.log"}
+```
 
 
-Start-job -Name arp_apartment_server  -ScriptBlock { Set-Location C:\Users\test_1\Desktop\arp_apartment_server; python .\server.py >> "C:\Users\test_1\Desktop\logs\arp_apartment_server.log"}
 
 
-Start-job -Name test_1_consumer  -ScriptBlock { Set-Location C:\Users\test_1\Desktop\arp_test_1_tool_v1_server; python .\test_1_consumer.py >> "C:\Users\test_1\Desktop\logs\test_1_consumer.log"}
-
-
- Start-job -Name test_1_tool_server  -ScriptBlock { Set-Location C:\Users\test_1\Desktop\arp_test_1_tool_v1_server; python .\test_1_tool_server.py >> "C:\Users\test_1\Desktop\logs\test_1_tool_server.log"}
-
-
-## 建议
+# 建议
 这里启动可以选择启动多个shell , 在 PowerShell 中，Jobs 是与创建它们的 session（会话）相关联的。当你关闭 PowerShell session（例如，关闭 PowerShell 窗口或终端），所有在该 session 中创建的 Jobs 都会被停止并删除。
 
 如果你需要创建一个可以在关闭 PowerShell session 后继续运行的后台任务，你可能需要考虑使用 Scheduled Tasks（计划任务）或者使用 nohup（在 Unix-like 系统中）等工具。
