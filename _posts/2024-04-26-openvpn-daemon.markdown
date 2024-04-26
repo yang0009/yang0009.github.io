@@ -2,13 +2,11 @@
 layout: post
 title:  "openvpn client 后台守护进程过程需要输入密码的问题处理"
 date:   2024-04-26 16:29:23 +0530
-categories: dockerd
+categories: openvpn
 ---
-背景:
+## 背景:
 最近在使用openvpn 客户端,发现后台运行的openvpn 客户端会出现输入密码的问题, 导致无法正常启动.后面查找文档,可以指定秘钥文件来运行,但是命令也有区别，其中启动命令取决于创建客户端时使用的是方式
 
-# 案例
-    
 ## 情况1:
 例如   ./easyrsa gen-req user1 nopass 命令生成的是没有密码的共享秘钥, 那么使用这个秘钥启动openvpn 客户端,就不会出现输入密码的情况.所以启动后台是命令是 
 ```
