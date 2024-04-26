@@ -1,7 +1,7 @@
 ---
 layout: post
-title:  "openvpn client 后台守护进程过程需要输入密码的问题处理"
-date:   2024-04-26 16:29:23 +0530
+title:  "openvpn client后台守护进程过程需要输入密码的问题处理"
+date:   2024-04-26 16:29:23 +0529
 categories: openvpn
 ---
 ## 背景:
