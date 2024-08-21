@@ -3,7 +3,7 @@ name: Build and Deploy Jekyll Site
 on:
   push:
     branches:
-      - main  # 这里指定了你要部署的分支，通常是 `main` 或 `master`
+      - master  # 这里指定了你要部署的分支，通常是 `main` 或 `master`
 
 jobs:
   build:
