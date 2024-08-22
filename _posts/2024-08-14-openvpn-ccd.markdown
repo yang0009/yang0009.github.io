@@ -10,8 +10,8 @@ categories: openvpn
 下面是openvpn server 端的配置
 ```
 [root@cicd ~]# cat /etc/openvpn/server.conf
-local 172.24.6.131
-#remote 114.132.162.176
+local <ip地址>
+remote <ip地址>
 port 1194
 proto tcp
 dev tun
@@ -76,5 +76,8 @@ iroute 10.10.88.0 255.255.255.0
 
 这样的话，在任何客户端连接到 OpenVPN 服务器时，OpenVPN 服务器会读取 ccd 目录中的配置文件，并根据这些配置文件中的信息来配置客户端的网络设置进行路由,假如我在客户端中访问10.10.100.0/24网段时，流量应该由ccd目录中记录的客户端发送
 这样就实现了客户端之间通过openvpn 打通内网
-
+于此同时，内网的客户端也可以不通过openvpn打通其他客户端的内网，只需要在路由器配置路由表即可
+例如：
+![alt text](route.png)
+这样就实现了免登录openvpn 打通内网，一般在办公司路由器配置可以实现整个公司实现网络打通
 
