@@ -28,7 +28,7 @@ jobs:
           bundle exec jekyll build
 
       - name: Deploy to GitHub Pages
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jekyll-site
           path: _site
