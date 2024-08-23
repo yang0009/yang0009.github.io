@@ -191,12 +191,12 @@ LISTEN     0      128         :::10809                   :::*                   
 接下来需要在容器内部执行指定的宿主机ip:端口的环境变量，注意这里的ip是宿主机的,不是容器内部的127.0.0.1
 ```
 [root@cicd v2ray]# docker run -it wine:ubuntu20.04-python3.11 bash
-root@c6012ee486df:/# export https_proxy=http://172.24.6.131:10808
-root@c6012ee486df:/# export http_proxy=http://172.24.6.131:10808
+root@c6012ee486df:/# export https_proxy=socks5://172.24.6.131:10808 # 使用socks5代理端口为10808,也可以使用http代理，端口为10809
+root@c6012ee486df:/# export http_proxy=socks5://172.24.6.131:10808
 root@c6012ee486df:/# apt-get update
 ```
 以上说明，容器内部已经可以访问外网了，但有些人会遇到以下问题
 1. 如果出现connection refused 说明代理端口没有监听成功, 检查一下listen 的ip 和是不是0.0.0.0 如果是127.0.0.1 则不通
-2. 如果出现 OpenSSL SSL_connect 说明代理地址不对，检查https_proxy=http://172.24.6.131:10808 而不是 https://172.24.6.131:10808
+2. 如果出现 OpenSSL SSL_connect 说明代理地址不对，检查https_proxy=http://172.24.6.131:10809 而不是 https://172.24.6.131:10809
 
 
