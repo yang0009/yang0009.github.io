@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "gitlab-runner shell executer指定默认shell为bash"
-date:   2025-01-10 15:22:10 +0525
+date:   2025-01-06 15:22:10 +0525
 categories: gitlab-runner
 ---
 
