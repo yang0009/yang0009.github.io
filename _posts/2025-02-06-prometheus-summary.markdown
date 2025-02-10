@@ -1,9 +1,8 @@
 ---
 layout: post
 title:  "prometheus 问题总结"
-date:   2025-02-06 15:22:10 +0525
-categories: gitlab-runner
----
+date:   2025-02-06 18:22:10 +0525
+categories: prometheus
 
 ## 问题导航
 
