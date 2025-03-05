@@ -3,6 +3,7 @@ layout: post
 title:  "prometheus 问题总结"
 date:   2025-03-01 18:22:10 +0525
 categories: prometheus
+---
 
 监控系统的历史悠久,是一个很成熟的方向,而 Prometheus 作为新生代的开源监控系统,慢慢成为了云原生体系的事实标准,也证明了其设计很受欢迎。本文主要分享在 Prometheus 实践中遇到的一些问题和思考。
 
