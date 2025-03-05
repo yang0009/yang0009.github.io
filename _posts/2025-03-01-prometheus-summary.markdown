@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "prometheus 问题总结"
-date:   2025-02-06 18:22:10 +0525
+date:   2025-03-01 18:22:10 +0525
 categories: prometheus
 
 ## 问题导航
@@ -49,7 +49,6 @@ categories: prometheus
 
 ## Prometheus 的局限
 
-
 - Prometheus 是基于 Metric 的监控,不适用于日志(Logs)、事件(Event)、调用链(Tracing)。
 - Prometheus 默认是 Pull 模型,合理规划你的网络,尽量不要转发。
 - 对于集群化和水平扩展,官方和社区都没有银弹,需要合理选择 Federate、Cortex、Thanos等方案。
@@ -62,7 +61,7 @@ Prometheus 属于 CNCF 项目,拥有完整的开源生态,与 Zabbix 这种传�
 
 但是过于开放就会带来选型、试错成本。之前只需要在 zabbix agent里面几行配置就能完成的事,现在你会需要很多 exporter 搭配才能完成。还要对所有 exporter 维护、监控。尤其是升级 exporter 版本时,很痛苦。非官方exporter 还会有不少 bug。这是使用上的不足,当然也是 Prometheus 的设计原则。
 
-K8S 生态的组件都会提供/metric接口以提供自监控,这里列下我们正在使用的：
+K8S 生态的组件都会提供/metric接口以提供自监控,这里列下我们正在使用的:
 
 - [cadvisor](http://www.xuyasong.com/?p=1483): 集成在 Kubelet 中。
 - kubelet: 10255为非认证端口,10250为认证端口。
@@ -71,7 +70,7 @@ K8S 生态的组件都会提供/metric接口以提供自监控,这里列下我�
 - controller-manager: 10252端口。
 - etcd: 如etcd 写入读取延迟、存储容量等。
 - docker: 需要开启 experimental 实验特性,配置 metrics-addr,如容器创建耗时等指标。
-- kube-proxy: 默认 127 暴露,10249端口。外部采集时可以修改为 0.0.0.0 监听,会暴露：写入 iptables 规则的耗时等指标。
+- kube-proxy: 默认 127 暴露,10249端口。外部采集时可以修改为 0.0.0.0 监听,会暴露:写入 iptables 规则的耗时等指标。
 - [kube-state-metrics](http://www.xuyasong.com/?p=1525): K8S 官方项目,采集pod、deployment等资源的元信息。
 - [node-exporter](http://www.xuyasong.com/?p=1539): Prometheus 官方项目,采集机器指标如 CPU、内存、磁盘。
 - blackbox_exporter: Prometheus 官方项目,网络探测,dns、ping、http监控
@@ -82,24 +81,15 @@ K8S 生态的组件都会提供/metric接口以提供自监控,这里列下我�
 
 还有各种场景下的[自定义 exporter](http://www.xuyasong.com/?p=1942),如日志提取后面会再做介绍。
 
-
 ## K8S 核心组件监控与 Grafana 面板
 
-k8s 集群运行中需要关注核心组件的状态、性能。如 kubelet、apiserver 等,基于上面提到的 exporter 的指标,可以在 Grafana 中绘制如下图表：
-
-![](/img/1fac1158-c452-4d5c-8989-f3161c9e4527.jpg)
-
-![](/img/64aed493-7c19-417b-8f08-79ee57258bcb.jpg)
-
-![](/img/f9d8a67b-add1-4bd6-9d32-f33b9b3bdac6.jpg)
-
-![](/img/3b59cbcd-05c4-46ed-a129-2564472d8fd1.jpg)
+k8s 集群运行中需要关注核心组件的状态、性能。如 kubelet、apiserver 等,基于上面提到的 exporter 的指标,可以在 Grafana 中绘制如下图表:
 
 模板可以参考[dashboards-for-kubernetes-administrators](https://povilasv.me/grafana-dashboards-for-kubernetes-administrators/),根据运行情况不断调整报警阈值。
 
 这里提一下 Grafana 虽然支持了 templates 能力,可以很方便地做多级下拉框选择,但是不支持templates 模式下配置报警规则,相关[issue](https://github.com/grafana/grafana/issues/9334)
 
-官方对这个功能解释了一堆,可最新版本仍然没有支持。借用 issue 的一句话吐槽下：
+官方对这个功能解释了一堆,可最新版本仍然没有支持。借用 issue 的一句话吐槽下:
 
 `It would be grate to add templates support in alerts. Otherwise the feature looks useless a bit.`
 
@@ -107,7 +97,7 @@ k8s 集群运行中需要关注核心组件的状态、性能。如 kubelet、ap
 
 ## 采集组件 All IN One
 
-Prometheus 体系中 Exporter 都是独立的,每个组件各司其职,如机器资源用 Node-Exporter,Gpu 有Nvidia Exporter等等。但是 Exporter 越多,运维压力越大,尤其是对 Agent做资源控制、版本升级。我们尝试对一些Exporter进行组合,方案有二：
+Prometheus 体系中 Exporter 都是独立的,每个组件各司其职,如机器资源用 Node-Exporter,Gpu 有Nvidia Exporter等等。但是 Exporter 越多,运维压力越大,尤其是对 Agent做资源控制、版本升级。我们尝试对一些Exporter进行组合,方案有二:
 
 - 1、通过主进程拉起N个 Exporter 进程,仍然可以跟着社区版本做更新、bug fix。
 - 2、用Telegraf来支持各种类型的 Input,N 合 1。
@@ -116,16 +106,16 @@ Prometheus 体系中 Exporter 都是独立的,每个组件各司其职,如机器
 
 ## 合理选择黄金指标
 
-采集的指标有很多,我们应该关注哪些？Google 在“Sre Handbook”中提出了“四个黄金信号”：延迟、流量、错误数、饱和度。实际操作中可以使用 Use 或 Red 方法作为指导,Use 用于资源,Red 用于服务。
+采集的指标有很多,我们应该关注哪些？Google 在“Sre Handbook”中提出了“四个黄金信号”:延迟、流量、错误数、饱和度。实际操作中可以使用 Use 或 Red 方法作为指导,Use 用于资源,Red 用于服务。
 
-- Use 方法：Utilization、Saturation、Errors。如 Cadvisor 数据
-- Red 方法：Rate、Errors、Duration。如 Apiserver 性能指标
+- Use 方法:Utilization、Saturation、Errors。如 Cadvisor 数据
+- Red 方法:Rate、Errors、Duration。如 Apiserver 性能指标
 
-Prometheus 采集中常见的服务分三种：
+Prometheus 采集中常见的服务分三种:
 
-- 1、在线服务：如 Web 服务、数据库等,一般关心请求速率,延迟和错误率即 RED 方法
-- 2、离线服务：如日志处理、消息队列等,一般关注队列数量、进行中的数量,处理速度以及发生的错误即 Use 方法
-- 3、批处理任务：和离线任务很像,但是离线任务是长期运行的,批处理任务是按计划运行的,如持续集成就是批处理任务,对应 K8S 中的 job 或 cronjob, 一般关注所花的时间、错误数等,因为运行周期短,很可能还没采集到就运行结束了,所以一般使用 Pushgateway,改拉为推。
+- 1、在线服务:如 Web 服务、数据库等,一般关心请求速率,延迟和错误率即 RED 方法
+- 2、离线服务:如日志处理、消息队列等,一般关注队列数量、进行中的数量,处理速度以及发生的错误即 Use 方法
+- 3、批处理任务:和离线任务很像,但是离线任务是长期运行的,批处理任务是按计划运行的,如持续集成就是批处理任务,对应 K8S 中的 job 或 cronjob, 一般关注所花的时间、错误数等,因为运行周期短,很可能还没采集到就运行结束了,所以一般使用 Pushgateway,改拉为推。
 
 对 Use 和 Red 的实际示例可以参考[容器监控实践—K8S常用指标分析](http://www.xuyasong.com/?P=1717)这篇文章。
 
@@ -153,7 +143,7 @@ metric_relabel_configs:
 
 Prometheus 如果部署在K8S集群内采集是很方便的,用官方给的Yaml就可以,但我们因为权限和网络需要部署在集群外,二进制运行,采集多个 K8S 集群。
 
-以 Pod 方式运行在集群内是不需要证书的(In-Cluster 模式),但集群外需要声明 token之类的证书,并替换address,即使用 Apiserver Proxy采集,以 Cadvisor采集为例,Job 配置为：
+以 Pod 方式运行在集群内是不需要证书的(In-Cluster 模式),但集群外需要声明 token之类的证书,并替换address,即使用 Apiserver Proxy采集,以 Cadvisor采集为例,Job 配置为:
 
 ```yaml
 - job_name: cluster-cadvisor
@@ -204,9 +194,9 @@ Prometheus 如果部署在K8S集群内采集是很方便的,用官方给的Yaml�
 
 bearer_token_file 需要提前生成,这个参考官方文档即可。记得 base64 解码。
 
-对于 cadvisor 来说,__metrics_path__可以转换为/api/v1/nodes/${1}/proxy/metrics/cadvisor,代表Apiserver proxy 到 Kubelet,如果网络能通,其实也可以直接把 Kubelet 的10255作为 target,可以直接写为：${1}:10255/metrics/cadvisor,代表直接请求Kubelet,规模大的时候还减轻了 Apiserver 的压力,即服务发现使用 Apiserver,采集不走 Apiserver
+对于 cadvisor 来说,__metrics_path__可以转换为/api/v1/nodes/${1}/proxy/metrics/cadvisor,代表Apiserver proxy 到 Kubelet,如果网络能通,其实也可以直接把 Kubelet 的10255作为 target,可以直接写为:${1}:10255/metrics/cadvisor,代表直接请求Kubelet,规模大的时候还减轻了 Apiserver 的压力,即服务发现使用 Apiserver,采集不走 Apiserver
 
-因为 cadvisor 是暴露主机端口,配置相对简单,如果是 kube-state-metric 这种 Deployment,以 endpoint 形式暴露,写法应该是：
+因为 cadvisor 是暴露主机端口,配置相对简单,如果是 kube-state-metric 这种 Deployment,以 endpoint 形式暴露,写法应该是:
 
 ```yaml
 - job_name: cluster-service-endpoints
@@ -272,11 +262,11 @@ bearer_token_file 需要提前生成,这个参考官方文档即可。记得 bas
 
 其他的一些 relabel 如kubernetes_namespace 是为了保留原始信息,方便做 promql 查询时的筛选条件。
 
-如果是多集群,同样的配置多写几遍就可以了,一般一个集群可以配置三类job：
+如果是多集群,同样的配置多写几遍就可以了,一般一个集群可以配置三类job:
 
 - role:node 的,包括 cadvisor、 node-exporter、kubelet 的 summary、kube-proxy、docker 等指标
 - role:endpoint 的,包括 kube-state-metric 以及其他自定义 Exporter
-- 普通采集：包括Etcd、Apiserver 性能指标、进程指标等。
+- 普通采集:包括Etcd、Apiserver 性能指标、进程指标等。
 
 ## GPU 指标的获取
 
@@ -294,16 +284,12 @@ container_accelerator_memory_used_bytes
 
 Prometheus 为避免时区混乱,在所有组件中专门使用 Unix Time 和 Utc 进行显示。不支持在配置文件中设置时区,也不能读取本机 /etc/timezone 时区。
 
-其实这个限制是不影响使用的：
+其实这个限制是不影响使用的:
 
 *   如果做可视化,Grafana是可以做时区转换的。
 *   如果是调接口,拿到了数据中的时间戳,你想怎么处理都可以。
 *   如果因为 Prometheus 自带的 UI 不是本地时间,看着不舒服,[2.16 版本](https://github.com/prometheus/prometheus/commit/d996ba20ec9c7f1808823a047ed9d5ce96be3d8f)的新版 Web UI已经引入了Local Timezone 的选项,区别见下图。
 *   如果你仍然想改 Prometheus 代码来适应自己的时区,可以参考[这篇文章](https://zhangguanzhang.github.io/2019/09/05/prometheus-change-timezone/)。
-
-![](/img/2e415b33-c061-4dec-8433-777ba4edcb8c.jpg)
-
-![](/img/b1afc5c8-b49f-44f8-bc06-086361c83024.jpg)
 
 关于 timezone 的讨论,可以看这个[issue](https://github.com/prometheus/prometheus/issues/500)。
 
@@ -320,41 +306,35 @@ Prometheus 当前最新版本为 2.16,Prometheus 还在不断迭代,因此尽量
 
 2.16 版本上有一套实验 UI,可以查看 TSDB 的状态,包括Top 10的 Label、Metric.
 
-![](/img/9668d944-b7b7-425e-b86b-ae24c5aa2f0c.jpg)
-
 ## Prometheus 大内存问题
 
 随着规模变大,Prometheus 需要的 CPU 和内存都会升高,内存一般先达到瓶颈,这个时候要么加内存,要么集群分片减少单机指标。这里我们先讨论单机版 Prometheus 的内存问题。
 
-原因：
+原因:
 
 *   Prometheus 的内存消耗主要是因为每隔2小时做一个 Block 数据落盘,落盘之前所有数据都在内存里面,因此和采集量有关。
 *   加载历史数据时,是从磁盘到内存的,查询范围越大,内存越大。这里面有一定的优化空间。
 *   一些不合理的查询条件也会加大内存,如 Group 或大范围 Rate。
 
-我的指标需要多少内存：
+我的指标需要多少内存:
 
-*   作者给了一个计算器,设置指标量、采集间隔之类的,计算 Prometheus 需要的理论内存值：[计算公式](https://www.robustperception.io/how-much-ram-does-prometheus-2-x-need-for-cardinality-and-ingestion)
+*   作者给了一个计算器,设置指标量、采集间隔之类的,计算 Prometheus 需要的理论内存值:[计算公式](https://www.robustperception.io/how-much-ram-does-prometheus-2-x-need-for-cardinality-and-ingestion)
 
-以我们的一个 Prometheus Server为例,本地只保留 2 小时数据,95 万 Series,大概占用的内存如下：
+以我们的一个 Prometheus Server为例,本地只保留 2 小时数据,95 万 Series,大概占用的内存如下:
 
-![](/img/596f6d60-2e37-460a-8da5-9dfd07b7170d.jpg)
-
-![](/img/5a5ea166-f9df-49d1-ab79-02a925c11322.jpg)
-
-有什么优化方案：
+有什么优化方案:
 
 *   Sample 数量超过了 200 万,就不要单实例了,做下分片,然后通过 Victoriametrics,Thanos,Trickster 等方案合并数据。
 *   评估哪些 Metric 和 Label 占用较多,去掉没用的指标。2.14 以上可以看 [Tsdb 状态](https://www.google.com/url?q=https%3A%2F%2Fprometheus.io%2Fdocs%2Fprometheus%2Flatest%2Fquerying%2Fapi%2F%23tsdb-stats&amp;sa=D&amp;sntz=1&amp;usg=AFQjCNFE5AzQxyhzt8SqQLHPUySZl3lNNw)
 *   查询时尽量避免大范围查询,注意时间范围和 Step 的比例,慎用 Group。
 *   如果需要关联查询,先想想能不能通过 Relabel 的方式给原始数据多加个 Label,一条Sql 能查出来的何必用Join,时序数据库不是关系数据库。
 
-Prometheus 内存占用分析：
+Prometheus 内存占用分析:
 
-*   通过 pprof分析：https://www.robustperception.io/optimising-prometheus-2-6-0-memory-usage-with-pprof
-*   1.X 版本的内存：https://www.robustperception.io/how-much-ram-does-my-prometheus-need-for-ingestion
+*   通过 pprof分析:https://www.robustperception.io/optimising-prometheus-2-6-0-memory-usage-with-pprof
+*   1.X 版本的内存:https://www.robustperception.io/how-much-ram-does-my-prometheus-need-for-ingestion
 
-相关 issue：
+相关 issue:
 
 *   https://groups.google.com/forum/#!searchin/prometheus-users/memory%7Csort:date/prometheus-users/q4oiVGU6Bxo/uifpXVw3CwAJ
 *   https://github.com/prometheus/prometheus/issues/5723
@@ -368,7 +348,7 @@ Prometheus 内存占用分析：
 *   如果是 Remote-Write,和已有的 Tsdb 共用即可。
 *   如果是 Thanos 方案,本地磁盘可以忽略(2H),计算对象存储的大小就行。
 
-Prometheus 每2小时将已缓冲在内存中的数据压缩到磁盘上的块中。包括Chunks、Indexes、Tombstones、Metadata,这些占用了一部分存储空间。一般情况下,Prometheus中存储的每一个样本大概占用1-2字节大小(1.7Byte)。可以通过Promql来查看每个样本平均占用多少空间：
+Prometheus 每2小时将已缓冲在内存中的数据压缩到磁盘上的块中。包括Chunks、Indexes、Tombstones、Metadata,这些占用了一部分存储空间。一般情况下,Prometheus中存储的每一个样本大概占用1-2字节大小(1.7Byte)。可以通过Promql来查看每个样本平均占用多少空间:
 
 ```bash 
 rate(prometheus_tsdb_compaction_chunk_size_bytes_sum[1h])  
@@ -378,7 +358,7 @@ rate(prometheus_tsdb_compaction_chunk_samples_sum[1h])
 {instance="0.0.0.0:8890", job="prometheus"} 1.252747585939941  
 ```
 
-如果大致估算本地磁盘大小,可以通过以下公式：
+如果大致估算本地磁盘大小,可以通过以下公式:
 
 ```bash
 磁盘大小 = 保留时间 * 每秒获取样本数 * 样本大小
@@ -386,7 +366,7 @@ rate(prometheus_tsdb_compaction_chunk_samples_sum[1h])
 
 保留时间(retention_time_seconds)和样本大小(bytes_per_sample)不变的情况下,如果想减少本地磁盘的容量需求,只能通过减少每秒获取样本数(ingested_samples_per_second)的方式。
 
-查看当前每秒获取的样本数：
+查看当前每秒获取的样本数:
 
 ```bash
 rate(prometheus_tsdb_head_samples_appended_total[1h])
@@ -394,7 +374,7 @@ rate(prometheus_tsdb_head_samples_appended_total[1h])
 
 有两种手段,一是减少时间序列的数量,二是增加采集样本的时间间隔。考虑到 Prometheus 会对时间序列进行压缩,因此减少时间序列的数量效果更明显。
 
-举例说明：
+举例说明:
 
 *   采集频率 30s,机器数量1000,Metric种类6000,1000_6000_2_60_24 约 200 亿,30G 左右磁盘。
 *   只采集需要的指标,如 match[], 或者统计下最常使用的指标,性能最差的指标。
@@ -423,9 +403,7 @@ Rate 并非想要捕获每个增量,因为有时候增量会丢失,例如实例�
 
 建议将 Rate 计算的范围向量的时间至少设为抓取间隔的四倍。这将确保即使抓取速度缓慢,且发生了一次抓取故障,您也始终可以使用两个样本。此类问题在实践中经常出现,因此保持这种弹性非常重要。例如,对于1分钟的抓取间隔,您可以使用4分钟的 Rate 计算,但是通常将其四舍五入为5分钟。
 
-如果 Rate 的时间区间内有数据缺失,他会基于趋势进行推测,比如：
-
-![](/img/eedead36-3aa5-4a1d-831d-dc53a80630b1.jpg)
+如果 Rate 的时间区间内有数据缺失,他会基于趋势进行推测,比如:
 
 详细的内容可以看下这个[视频](https://www.youtube.com/watch?reload=9&amp;v=67Ulrq6DxwA)
 
@@ -435,9 +413,9 @@ histogram_quantile 是 Prometheus 常用的一个函数,比如经常把某个服
 
 我们常说 P95(P99,P90都可以) 响应延迟是 100ms,实际上是指对于收集到的所有响应延迟,有 5% 的请求大于 100ms,95% 的请求小于 100ms。Prometheus 里面的 histogram_quantile 函数接收的是 0-1 之间的小数,将这个小数乘以 100 就能很容易得到对应的百分位数,比如 0.95 就对应着 P95,而且还可以高于百分位数的精度,比如 0.9999。
 
-当你用 histogram_quantile 画出响应时间的趋势图时,可能会被问：为什么P95大于或小于我的平均值？
+当你用 histogram_quantile 画出响应时间的趋势图时,可能会被问:为什么P95大于或小于我的平均值？
 
-正如中位数可能比平均数大也可能比平均数小,P99 比平均值小也是完全有可能的。通常情况下 P99 几乎总是比平均值要大的,但是如果数据分布比较极端,最大的 1% 可能大得离谱从而拉高了平均值。一种可能的例子：
+正如中位数可能比平均数大也可能比平均数小,P99 比平均值小也是完全有可能的。通常情况下 P99 几乎总是比平均值要大的,但是如果数据分布比较极端,最大的 1% 可能大得离谱从而拉高了平均值。一种可能的例子:
 
 ```bash
 1, 1, ... 1, 901 // 共 100 条数据,平均值=10,P99=1
@@ -445,7 +423,7 @@ histogram_quantile 是 Prometheus 常用的一个函数,比如经常把某个服
 
 服务 X 由顺序的 A,B 两个步骤完成,其中 X 的 P99 耗时 100Ms,A 过程 P99 耗时 50Ms,那么推测 B 过程的 P99 耗时情况是？
 
-直觉上来看,因为有 X=A+B,所以答案可能是 50Ms,或者至少应该要小于 50Ms。实际上 B 是可以大于 50Ms 的,只要 A 和 B 最大的 1% 不恰好遇到,B 完全可以有很大的 P99：
+直觉上来看,因为有 X=A+B,所以答案可能是 50Ms,或者至少应该要小于 50Ms。实际上 B 是可以大于 50Ms 的,只要 A 和 B 最大的 1% 不恰好遇到,B 完全可以有很大的 P99:
 
 ```bash
 A = 1, 1, ... 1,  1,  1,  50,  50 // 共 100 条数据,P99=50
@@ -454,7 +432,7 @@ X = 2, 2, ... 1, 51, 51, 100, 100 // 共 100 条数据,P99=100
 ```
 
 ```Bash
-如果让 A 过程最大的 1% 接近 100Ms,我们也能构造出 P99 很小的 B：
+如果让 A 过程最大的 1% 接近 100Ms,我们也能构造出 P99 很小的 B:
 A = 50, 50, ... 50,  50,  99 // 共 100 条数据,P99=50
 B =  1,  1, ...  1,   1,  50 // 共 100 条数据,P99=1
 X = 51, 51, ... 51, 100, 100 // 共 100 条数据,P99=100
@@ -476,7 +454,7 @@ Prometheus 提供了自定义的 Promql 作为查询语句,在 Graph 上调试�
 prometheus_engine_query_duration_seconds{}
 ```
 
-一般情况下响应过慢都是Promql 使用不当导致,或者指标规划有问题,如：
+一般情况下响应过慢都是Promql 使用不当导致,或者指标规划有问题,如:
 
 *   大量使用 join 来组合指标或者增加 label,如将 kube-state-metric 中的一些 meta label和 node-exporter 中的节点属性 label加入到 cadvisor容器数据里,像统计 pod 内存使用率并按照所属节点的机器类型分类,或按照所属 rs 归类。
 *   范围查询时,大的时间范围 step 值却很小,导致查询到的数量过大。
@@ -512,10 +490,6 @@ Postings entries (total label pairs): 10842822
 ....
 ```
 
-![](/img/295529ab-e033-4893-9b0a-cb0a3e698b35.jpg)
-
-![](/img/0bd4bdab-2b42-4040-a245-66b9530aab8c.jpg)
-
 top10 高基数的 metric
 
 ```bash
@@ -543,7 +517,7 @@ Highest cardinality labels:
 
 ## 找到最大的 metric 或 job
 
-top10的 metric 数量： 按 metric 名字分
+top10的 metric 数量: 按 metric 名字分
 
 ```bash
 topk(10, count by (__name__)({__name__=~".+"}))
@@ -552,7 +526,7 @@ apiserver_request_latencies_bucket{}  62544
 apiserver_response_sizes_bucket{}   44600
 ```
 
-top10的 metric 数量： 按 job 名字分
+top10的 metric 数量: 按 job 名字分
 
 ```bash
 topk(10, count by (__name__, job)({__name__=~".+"}))
@@ -586,7 +560,7 @@ while true; do
 done
 ```
 
-使用时和 prometheus 挂载同一个 configmap,传入如下参数即可：
+使用时和 prometheus 挂载同一个 configmap,传入如下参数即可:
 
 ```yaml
 args:
@@ -612,7 +586,7 @@ args:
 - 2、node-exporter 只支持 unix 系统,windows机器 请使用 wmi\_exporter。因此以 yaml 形式不是 node-exporter 的时候,node-selector 要表明os类型。
 - 3、因为node_exporter是比较老的组件,有一些最佳实践并没有merge进去,比如符合Prometheus[命名规范](https://prometheus.io/docs/practices/naming/),因此建议使用较新的0.16和0.17版本。
 
-一些指标名字的变化：
+一些指标名字的变化:
 
 ```yaml
 * node_cpu -&gt;  node_cpu_seconds_total
@@ -628,7 +602,7 @@ args:
 * node_intr -&gt; node_intr_total
 ```
 
-如果你之前用的旧版本 exporter,在绘制 grafana 的时候指标名称就会有差别,解决方法有两种：
+如果你之前用的旧版本 exporter,在绘制 grafana 的时候指标名称就会有差别,解决方法有两种:
 
 *   一是在机器上启动两个版本的node-exporter,都让prometheus去采集。
 *   二是使用[指标转换器](https://github.com/prometheus/node_exporter/blob/master/docs/example-16-compatibility-rules.yml),他会将旧指标名称转换为新指标
@@ -645,7 +619,7 @@ kube-state-metric 中也可以展示 pod 的 label 信息,可以在拿到 cadvis
 
 relabel_config 发生在采集之前,metric_relabel_configs 发生在采集之后,合理搭配可以满足很多场景的配置。
 
-如：
+如:
 
 ```bash
 metric_relabel_configs:
@@ -667,9 +641,9 @@ metric_relabel_configs:
 
 ## Prometheus 的预测能力
 
-场景1：你的磁盘剩余空间一直在减少,并且降低的速度比较均匀,你希望知道大概多久之后达到阈值,并希望在某一个时刻报警出来。
+场景1:你的磁盘剩余空间一直在减少,并且降低的速度比较均匀,你希望知道大概多久之后达到阈值,并希望在某一个时刻报警出来。
 
-场景2：你的 Pod 内存使用率一直升高,你希望知道大概多久之后会到达 Limit 值,并在一定时刻报警出来,在被杀掉之前上去排查。
+场景2:你的 Pod 内存使用率一直升高,你希望知道大概多久之后会到达 Limit 值,并在一定时刻报警出来,在被杀掉之前上去排查。
 
 Prometheus 的 Deriv 和 Predict\_Linear 方法可以满足这类需求, Promtheus 提供了基础的预测能力,基于当前的变化速度,推测一段时间后的值。
 
@@ -679,19 +653,13 @@ Prometheus 的 Deriv 和 Predict\_Linear 方法可以满足这类需求, Promthe
 mem_free仅为举例,实际内存可用以mem_available为准
 ```
 
-![](/img/467d1419-1757-4130-810c-d00fe0b1169b.jpg)
-
 deriv函数可以显示指标在一段时间的变化速度:
-
-![](/img/56b44830-006e-4d9a-be5b-50e92f5c08bd.jpg)
 
 predict\_linear方法是预测基于这种速度,最后可以达到的值:
 
 ```bash
 predict_linear(mem_free{instanceIP="100.75.155.55"}[1h], 2*3600)/1024/1024
 ```
-
-![](/img/1967b016-6b0e-4876-98b7-b5c8228c4654.jpg)
 
 你可以基于设置合理的报警规则,如小于 10 时报警:
 
@@ -713,17 +681,12 @@ predict\_linear 与 deriv 的关系: 含义上约等于如下表达式,不过 pr
 
 Prometheus 部署之后很少会改动,尤其是做了服务发现,就不需要频繁新增 target。但报警的配置是很频繁的,如修改阈值、修改报警人等。alertmanager 拥有丰富的报警能力如分组、抑制等,但如果你要想把他给业务部门使用,就要做一层封装了,也就是报警配置台。用户喜欢表单操作,而非晦涩的 yaml,同时他们也并不愿意去理解 promql。而且大多数公司内已经有现成的监控平台,也只有一份短信或邮件网关,所以最好能使用 webhook 直接集成。
 
-例如: 机器磁盘使用量超过 90% 就报警,rule 应该写为：`disk_used/disk_total > 0.9`
+例如: 机器磁盘使用量超过 90% 就报警,rule 应该写为:`disk_used/disk_total > 0.9`
 
 如果不加 label 筛选,这条报警会对所有机器生效,但如果你想去掉其中几台机器,就得在disk_used和disk_total后面加上{instance != “”}。这些操作在 promql 中是很简单的,但是如果放在表单里操作,就得和内部的 cmdb 做联动筛选了。
 
 *   对于一些简单的需求,我们使用了 Grafana 的报警能力,所见即所得,直接在图表下面配置告警即可,报警阈值和状态很清晰。不过 Grafana 的报警能力很弱,只是实验功能,可以作为调试使用。
-*   对于常见的 pod 或应用监控,我们做了一些表单化,如下图所示：提取了 CPU、内存、磁盘 IO 等常见的指标作为选择项,方便配置。
-    
-
-![](/img/c92c2fc3-f981-44a4-ad11-e10ccd84a29f.jpg)
-
-![](/img/eddaa0ba-8fd0-40d3-846a-790c4e5424c7.jpg)
+*   对于常见的 pod 或应用监控,我们做了一些表单化,如下图所示:提取了 CPU、内存、磁盘 IO 等常见的指标作为选择项,方便配置。
 
 *   使用 webhook 扩展报警能力,改造 alertmanager, 在 send message 时做加密和认证,对接内部已有报警能力,并联动用户体系,做限流和权限控制。
 *   调用 alertmanager api 查询报警事件,进行展示和统计。
@@ -733,15 +696,14 @@ Prometheus 部署之后很少会改动,尤其是做了服务发现,就不需要�
 ## 错误的高可用设计
 
 有些人提出过这种类型的方案,想提高其扩展性和可用性。  
-![](/img/84f4f78b-b7fc-48ee-8fb0-e9fe57e8d3b6.jpg)
 
 应用程序将 Metric 推到到消息队列如 Kafaka,然后经过 Exposer 消费中转,再被 Prometheus 拉取。产生这种方案的原因一般是有历史包袱、复用现有组件、想通过 Mq 来提高扩展性。
 
-这种方案有几个问题：
+这种方案有几个问题:
 
 1.  增加了 Queue 组件,多了一层依赖,如果 App与 Queue 之间连接失败,难道要在 App 本地缓存监控数据？
 2.  抓取时间可能会不同步,延迟的数据将会被标记为陈旧数据,当然你可以通过添加时间戳来标识,但就失去了对陈旧数据的[处理逻辑](https://www.robustperception.io/staleness-and-promql)
-3.  扩展性问题：Prometheus 适合大量小目标,而不是一个大目标,如果你把所有数据都放在了 Exposer 中,那么 Prometheus 的单个 Job 拉取就会成为 CPU 瓶颈。这个和 Pushgateway 有些类似,没有特别必要的场景,都不是官方建议的方式。
+3.  扩展性问题:Prometheus 适合大量小目标,而不是一个大目标,如果你把所有数据都放在了 Exposer 中,那么 Prometheus 的单个 Job 拉取就会成为 CPU 瓶颈。这个和 Pushgateway 有些类似,没有特别必要的场景,都不是官方建议的方式。
 4.  缺少了服务发现和拉取控制,Prom 只知道一个 Exposer,不知道具体是哪些 Target,不知道他们的 UP 时间,无法使用 Scrape\_\* 等指标做查询,也无法用[scrape\_limit](https://www.robustperception.io/using-sample_limit-to-avoid-overload)做限制。
 
 如果你的架构和 Prometheus 的设计理念相悖,可能要重新设计一下方案了,否则扩展性和可靠性反而会降低。
@@ -750,7 +712,7 @@ Prometheus 部署之后很少会改动,尤其是做了服务发现,就不需要�
 
 如果你是在 K8S 集群内部署 Prometheus,那大概率会用到 prometheus-operator,他对 Prometheus 的配置做了 CRD 封装,让用户更方便的扩展 Prometheus实例,同时 prometheus-operator 还提供了丰富的 Grafana 模板,包括上面提到的 master 组件监控的 Grafana 视图,operator 启动之后就可以直接使用,免去了配置面板的烦恼。
 
-operator 的优点很多,就不一一列举了,只提一下 operator 的局限：
+operator 的优点很多,就不一一列举了,只提一下 operator 的局限:
 
 *   因为是 operator,所以依赖 K8S 集群,如果你需要二进制部署你的 Prometheus,如集群外部署,就很难用上prometheus-operator了,如多集群场景。当然你也可以在 K8S 集群中部署 operator 去监控其他的 K8S 集群,但这里面坑不少,需要修改一些配置。
 *   operator 屏蔽了太多细节,这个对用户是好事,但对于理解 Prometheus 架构就有些 gap 了,比如碰到一些用户一键安装了operator,但 Grafana 图表异常后完全不知道如何排查,record rule 和 服务发现还不了解的情况下就直接配置,建议在使用 operator 之前,最好熟悉 prometheus 的基础用法。
@@ -758,11 +720,11 @@ operator 的优点很多,就不一一列举了,只提一下 operator 的局限�
 
 ## 高可用方案
 
-Prometheus 高可用有几种方案：
+Prometheus 高可用有几种方案:
 
-1.  基本 HA：即两套 Prometheus 采集完全一样的数据,外边挂负载均衡
-2.  HA + 远程存储：除了基础的多副本 Prometheus,还通过 Remote Write 写入到远程存储,解决存储持久化问题
-3.  联邦集群：即 Federation,按照功能进行分区,不同的 Shard 采集不同的数据,由Global节点来统一存放,解决监控数据规模的问题。
+1.  基本 HA:即两套 Prometheus 采集完全一样的数据,外边挂负载均衡
+2.  HA + 远程存储:除了基础的多副本 Prometheus,还通过 Remote Write 写入到远程存储,解决存储持久化问题
+3.  联邦集群:即 Federation,按照功能进行分区,不同的 Shard 采集不同的数据,由Global节点来统一存放,解决监控数据规模的问题。
 4.  使用 Thanos 或者 Victoriametrics,来解决全局查询、多副本数据 Join 问题。
 
 就算使用官方建议的多副本 + 联邦,仍然会遇到一些问题:
@@ -773,7 +735,7 @@ Prometheus 高可用有几种方案：
 3.  另外部分敏感报警尽量不要通过Global节点触发,毕竟从Shard节点到Global节点传输链路的稳定性会影响数据到达的效率,进而导致报警实效降低。
 4.  例如服务Updown状态,Api请求异常这类报警我们都放在Shard节点进行报警。
 
-本质原因是,Prometheus 的本地存储没有数据同步能力,要在保证可用性的前提下,再保持数据一致性是比较困难的,基础的 HA Proxy 满足不了要求,比如：
+本质原因是,Prometheus 的本地存储没有数据同步能力,要在保证可用性的前提下,再保持数据一致性是比较困难的,基础的 HA Proxy 满足不了要求,比如:
 
 *   集群的后端有 A 和 B 两个实例,A 和 B 之间没有数据同步。A 宕机一段时间,丢失了一部分数据,如果负载均衡正常轮询,请求打到A 上时,数据就会异常。
 *   如果 A 和 B 的启动时间不同,时钟不同,那么采集同样的数据时间戳也不同,就不是多副本同样数据的概念了
@@ -781,8 +743,8 @@ Prometheus 高可用有几种方案：
 
 因此解决方案是在存储、查询两个角度上保证数据的一致:
 
-*   存储角度：如果使用 Remote Write 远程存储, A 和 B后面可以都加一个 Adapter,Adapter做选主逻辑,只有一份数据能推送到 TSDB,这样可以保证一个异常,另一个也能推送成功,数据不丢,同时远程存储只有一份,是共享数据。方案可以参考[这篇文章](https://blog.timescale.com/blog/prometheus-ha-postgresql-8de68d19b6f5)
-*   查询角度：上边的方案实现很复杂且有一定风险,因此现在的大多数方案在查询层面做文章,比如 Thanos 或者 Victoriametrics,仍然是两份数据,但是查询时做数据去重和 Join。只是 Thanos 是通过 Sidecar 把数据放在对象存储,Victoriametrics 是把数据 Remote Write 到自己的 Server 实例,但查询层 Thanos-Query 和 Victor 的 Promxy的逻辑基本一致。
+*   存储角度:如果使用 Remote Write 远程存储, A 和 B后面可以都加一个 Adapter,Adapter做选主逻辑,只有一份数据能推送到 TSDB,这样可以保证一个异常,另一个也能推送成功,数据不丢,同时远程存储只有一份,是共享数据。方案可以参考[这篇文章](https://blog.timescale.com/blog/prometheus-ha-postgresql-8de68d19b6f5)
+*   查询角度:上边的方案实现很复杂且有一定风险,因此现在的大多数方案在查询层面做文章,比如 Thanos 或者 Victoriametrics,仍然是两份数据,但是查询时做数据去重和 Join。只是 Thanos 是通过 Sidecar 把数据放在对象存储,Victoriametrics 是把数据 Remote Write 到自己的 Server 实例,但查询层 Thanos-Query 和 Victor 的 Promxy的逻辑基本一致。
 
 我们采用了 Thanos 来支持多地域监控数据,具体方案可以看[这篇文章](http://www.xuyasong.com/?p=1925)
 
@@ -790,22 +752,22 @@ Prometheus 高可用有几种方案：
 
 本文主要是 Prometheus 监控内容, 这里只简单介绍下 K8S 中的日志、事件处理方案,以及和 Prometheus 的搭配。
 
-`日志处理`：
+`日志处理`:
 
-*   日志采集与推送：一般是Fluentd/Fluent-Bit/Filebeat等采集推送到 ES、对象存储、kafaka,日志就该交给专业的 EFK 来做,分为容器标准输出、容器内日志。
-*   日志解析转 metric：可以提取一些日志转为 Prometheus 格式的指标,如解析特定字符串出现次数,解析 Nginx 日志得到 QPS 、请求延迟等。常用方案是 mtail 或者 grok
+*   日志采集与推送:一般是Fluentd/Fluent-Bit/Filebeat等采集推送到 ES、对象存储、kafaka,日志就该交给专业的 EFK 来做,分为容器标准输出、容器内日志。
+*   日志解析转 metric:可以提取一些日志转为 Prometheus 格式的指标,如解析特定字符串出现次数,解析 Nginx 日志得到 QPS 、请求延迟等。常用方案是 mtail 或者 grok
 
-`日志采集方案`：
+`日志采集方案`:
 
-*   sidecar 方式：和业务容器共享日志目录,由 sidecar 完成日志推送,一般用于多租户场景。
-*   daemonset 方式：机器上运行采集进程,统一推送出去。
+*   sidecar 方式:和业务容器共享日志目录,由 sidecar 完成日志推送,一般用于多租户场景。
+*   daemonset 方式:机器上运行采集进程,统一推送出去。
 
-`需要注意的点`：对于容器标准输出,默认日志路径是`/var/lib/docker/containers/xxx`, kubelet 会将改日志软链到`/var/log/pods`,同时还有一份`/var/log/containers` 是对`/var/log/pods`的软链。不过不同的 K8S 版本,日志的目录格式有所变化,采集时根据版本做区分：
+`需要注意的点`:对于容器标准输出,默认日志路径是`/var/lib/docker/containers/xxx`, kubelet 会将改日志软链到`/var/log/pods`,同时还有一份`/var/log/containers` 是对`/var/log/pods`的软链。不过不同的 K8S 版本,日志的目录格式有所变化,采集时根据版本做区分:
 
-*   1.15 及以下：/var/log/pods/{pod\_uid}/
-*   1.15 以上：var/log/pods/{pod\_name+namespace+rs+uuid}/
+*   1.15 及以下:/var/log/pods/{pod\_uid}/
+*   1.15 以上:var/log/pods/{pod\_name+namespace+rs+uuid}/
 
-`事件`：在这里特指 K8S Events,Events 在排查集群问题时也很关键,不过默认情况下只保留 1h,因此需要对 Events 做持久化。一般 Events 处理方式有两种：
+`事件`:在这里特指 K8S Events,Events 在排查集群问题时也很关键,不过默认情况下只保留 1h,因此需要对 Events 做持久化。一般 Events 处理方式有两种:
 
 - 使用 [kube-eventer](https://github.com/AliyunContainerService/kube-eventer) 之类的组件采集 Events 并推送到 ES
 - 使用 [event_exporter](https://github.com/caicloud/event_exporter) 之类的组件将Events 转化为 Prometheus Metric,同类型的还有谷歌云的 stackdriver 下的 [event-exporter](https://github.com/GoogleCloudPlatform/k8s-stackdriver/tree/master/event-exporter)
