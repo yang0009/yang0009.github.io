@@ -4,41 +4,6 @@ title:  "prometheus 问题总结"
 date:   2025-03-01 18:22:10 +0525
 categories: prometheus
 
-## 问题导航
-
-- 1 几点原则
-- 2 Prometheus 的局限
-- 3 K8S 集群中常用的 exporter
-- 4 K8S 核心组件监控与 Grafana 面板
-- 5 采集组件 All IN One
-- 6 合理选择黄金指标
-- 7 K8S 1.16中 Cadvisor 的指标兼容问题
-- 8 Prometheus 采集外部 K8S 集群、多集群
-- 9 GPU 指标的获取
-- 10 更改 Prometheus 的显示时区
-- 11 如何采集 LB 后面的 RS 的 Metric
-- 12 版本的选择
-- 13 Prometheus 大内存问题
-- 14 Prometheus 容量规划
-- 15 对 Apiserver 的性能影响
-- 16 Rate 的计算逻辑
-- 17 反直觉的 P95 统计
-- 18 慢查询问题
-- 19 高基数问题 Cardinality
-- 20 找到最大的 metric 或 job
-- 21 Prometheus 重启慢与热加载
-- 22 你的应用需要暴露多少指标
-- 23 node-exporter 的问题
-- 24 kube-state-metric 的问题
-- 25 relabel_configs 与 metric_relabel_configs
-- 26 Prometheus 的预测能力
-- 27 alertmanager 的上层封装
-- 28 错误的高可用设计
-- 29 prometheus-operator 的场景
-- 30 高可用方案
-- 31 容器日志与事件
-- 32 参考
-
 监控系统的历史悠久,是一个很成熟的方向,而 Prometheus 作为新生代的开源监控系统,慢慢成为了云原生体系的事实标准,也证明了其设计很受欢迎。本文主要分享在 Prometheus 实践中遇到的一些问题和思考。
 
 ## 几点原则
@@ -80,181 +45,6 @@ K8S 生态的组件都会提供/metric接口以提供自监控,这里列下我�
 - 应用层 exporter: mysql、nginx、mq等,看业务需求。
 
 还有各种场景下的[自定义 exporter](http://www.xuyasong.com/?p=1942),如日志提取后面会再做介绍。
-
-## K8S 核心组件监控与 Grafana 面板
-
-k8s 集群运行中需要关注核心组件的状态、性能。如 kubelet、apiserver 等,基于上面提到的 exporter 的指标,可以在 Grafana 中绘制如下图表:
-
-模板可以参考[dashboards-for-kubernetes-administrators](https://povilasv.me/grafana-dashboards-for-kubernetes-administrators/),根据运行情况不断调整报警阈值。
-
-这里提一下 Grafana 虽然支持了 templates 能力,可以很方便地做多级下拉框选择,但是不支持templates 模式下配置报警规则,相关[issue](https://github.com/grafana/grafana/issues/9334)
-
-官方对这个功能解释了一堆,可最新版本仍然没有支持。借用 issue 的一句话吐槽下:
-
-`It would be grate to add templates support in alerts. Otherwise the feature looks useless a bit.`
-
-关于 Grafana 的基础用法,可以看[这个文章](http://www.xuyasong.com/?p=1693)
-
-## 采集组件 All IN One
-
-Prometheus 体系中 Exporter 都是独立的,每个组件各司其职,如机器资源用 Node-Exporter,Gpu 有Nvidia Exporter等等。但是 Exporter 越多,运维压力越大,尤其是对 Agent做资源控制、版本升级。我们尝试对一些Exporter进行组合,方案有二:
-
-- 1、通过主进程拉起N个 Exporter 进程,仍然可以跟着社区版本做更新、bug fix。
-- 2、用Telegraf来支持各种类型的 Input,N 合 1。
-
-另外,Node-Exporter 不支持进程监控,可以加一个Process-Exporter,也可以用上边提到的Telegraf,使用 procstat 的 input来采集进程指标。
-
-## 合理选择黄金指标
-
-采集的指标有很多,我们应该关注哪些？Google 在“Sre Handbook”中提出了“四个黄金信号”:延迟、流量、错误数、饱和度。实际操作中可以使用 Use 或 Red 方法作为指导,Use 用于资源,Red 用于服务。
-
-- Use 方法:Utilization、Saturation、Errors。如 Cadvisor 数据
-- Red 方法:Rate、Errors、Duration。如 Apiserver 性能指标
-
-Prometheus 采集中常见的服务分三种:
-
-- 1、在线服务:如 Web 服务、数据库等,一般关心请求速率,延迟和错误率即 RED 方法
-- 2、离线服务:如日志处理、消息队列等,一般关注队列数量、进行中的数量,处理速度以及发生的错误即 Use 方法
-- 3、批处理任务:和离线任务很像,但是离线任务是长期运行的,批处理任务是按计划运行的,如持续集成就是批处理任务,对应 K8S 中的 job 或 cronjob, 一般关注所花的时间、错误数等,因为运行周期短,很可能还没采集到就运行结束了,所以一般使用 Pushgateway,改拉为推。
-
-对 Use 和 Red 的实际示例可以参考[容器监控实践—K8S常用指标分析](http://www.xuyasong.com/?P=1717)这篇文章。
-
-## K8S 1.16中 Cadvisor 的指标兼容问题
-
-在 K8S 1.16版本,Cadvisor 的指标去掉了 pod_Name 和 container_name 的 label,替换为了pod 和 container。如果你之前用这两个 label 做查询或者 Grafana 绘图,需要更改下 Sql 了。因为我们一直支持多个 K8S 版本,就通过 relabel配置继续保留了原来的**_name。
-
-```yaml
-metric_relabel_configs:
-- source_labels: [container]
-  regex: (.+)
-  target_label: container_name
-  replacement: $1
-  action: replace
-- source_labels: [pod]
-  regex: (.+)
-  target_label: pod_name
-  replacement: $1
-  action: replace
-```
-
-注意要用 metric_relabel_configs,不是 relabel_configs,采集后做的replace。
-
-## Prometheus 采集外部 K8S 集群、多集群
-
-Prometheus 如果部署在K8S集群内采集是很方便的,用官方给的Yaml就可以,但我们因为权限和网络需要部署在集群外,二进制运行,采集多个 K8S 集群。
-
-以 Pod 方式运行在集群内是不需要证书的(In-Cluster 模式),但集群外需要声明 token之类的证书,并替换address,即使用 Apiserver Proxy采集,以 Cadvisor采集为例,Job 配置为:
-
-```yaml
-- job_name: cluster-cadvisor
-  honor_timestamps: true
-  scrape_interval: 30s
-  scrape_timeout: 10s
-  metrics_path: /metrics
-  scheme: https
-  kubernetes_sd_configs:
-  - api_server: https://xx:6443
-    role: node
-    bearer_token_file: token/cluster.token
-    tls_config:
-      insecure_skip_verify: true
-  bearer_token_file: token/cluster.token
-  tls_config:
-    insecure_skip_verify: true
-  relabel_configs:
-  - separator: ;
-    regex: __meta_kubernetes_node_label_(.+)
-    replacement: $1
-    action: labelmap
-  - separator: ;
-    regex: (.*)
-    target_label: __address__
-    replacement: xx:6443
-    action: replace
-  - source_labels: [__meta_kubernetes_node_name]
-    separator: ;
-    regex: (.+)
-    target_label: __metrics_path__
-    replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
-    action: replace
-  metric_relabel_configs:
-  - source_labels: [container]
-    separator: ;
-    regex: (.+)
-    target_label: container_name
-    replacement: $1
-    action: replace
-  - source_labels: [pod]
-    separator: ;
-    regex: (.+)
-    target_label: pod_name
-    replacement: $1
-    action: replace
-```
-
-bearer_token_file 需要提前生成,这个参考官方文档即可。记得 base64 解码。
-
-对于 cadvisor 来说,__metrics_path__可以转换为/api/v1/nodes/${1}/proxy/metrics/cadvisor,代表Apiserver proxy 到 Kubelet,如果网络能通,其实也可以直接把 Kubelet 的10255作为 target,可以直接写为:${1}:10255/metrics/cadvisor,代表直接请求Kubelet,规模大的时候还减轻了 Apiserver 的压力,即服务发现使用 Apiserver,采集不走 Apiserver
-
-因为 cadvisor 是暴露主机端口,配置相对简单,如果是 kube-state-metric 这种 Deployment,以 endpoint 形式暴露,写法应该是:
-
-```yaml
-- job_name: cluster-service-endpoints
-  honor_timestamps: true
-  scrape_interval: 30s
-  scrape_timeout: 10s
-  metrics_path: /metrics
-  scheme: https
-  kubernetes_sd_configs:
-  - api_server: https://xxx:6443
-    role: endpoints
-    bearer_token_file: token/cluster.token
-    tls_config:
-      insecure_skip_verify: true
-  bearer_token_file: token/cluster.token
-  tls_config:
-    insecure_skip_verify: true
-  relabel_configs:
-  - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
-    separator: ;
-    regex: "true"
-    replacement: $1
-    action: keep
-  - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
-    separator: ;
-    regex: (https?)
-    target_label: __scheme__
-    replacement: $1
-    action: replace
-  - separator: ;
-    regex: (.*)
-    target_label: __address__
-    replacement: xxx:6443
-    action: replace
-  - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_endpoints_name,
-      __meta_kubernetes_service_annotation_prometheus_io_port]
-    separator: ;
-    regex: (.+);(.+);(.*)
-    target_label: __metrics_path__
-    replacement: /api/v1/namespaces/${1}/services/${2}:${3}/proxy/metrics
-    action: replace
-  - separator: ;
-    regex: __meta_kubernetes_service_label_(.+)
-    replacement: $1
-    action: labelmap
-  - source_labels: [__meta_kubernetes_namespace]
-    separator: ;
-    regex: (.*)
-    target_label: kubernetes_namespace
-    replacement: $1
-    action: replace
-  - source_labels: [__meta_kubernetes_service_name]
-    separator: ;
-    regex: (.*)
-    target_label: kubernetes_name
-    replacement: $1
-    action: replace
-```
 
 对于 endpoint 类型,需要转换__metrics_path__为/api/v1/namespaces/${1}/services/${2}:${3}/proxy/metrics,需要替换 namespace、svc 名称端口等,这里的写法只适合接口为/metrics的exporter,如果你的 exporter 不是/metrics接口,需要替换这个路径。或者像我们一样统一约束都使用这个地址。
 
@@ -299,46 +89,6 @@ Prometheus 为避免时区混乱,在所有组件中专门使用 Unix Time 和 Ut
 
 *   RS 的服务加 Sidecar Proxy,或者本机增加 Proxy 组件,保证 Prometheus 能访问到。
 *   LB 增加 /backend1 和 /backend2请求转发到两个单独的后端,再由 Prometheus 访问 LB 采集。
-
-## 版本的选择
-
-Prometheus 当前最新版本为 2.16,Prometheus 还在不断迭代,因此尽量用最新版,1.X版本就不用考虑了。
-
-2.16 版本上有一套实验 UI,可以查看 TSDB 的状态,包括Top 10的 Label、Metric.
-
-## Prometheus 大内存问题
-
-随着规模变大,Prometheus 需要的 CPU 和内存都会升高,内存一般先达到瓶颈,这个时候要么加内存,要么集群分片减少单机指标。这里我们先讨论单机版 Prometheus 的内存问题。
-
-原因:
-
-*   Prometheus 的内存消耗主要是因为每隔2小时做一个 Block 数据落盘,落盘之前所有数据都在内存里面,因此和采集量有关。
-*   加载历史数据时,是从磁盘到内存的,查询范围越大,内存越大。这里面有一定的优化空间。
-*   一些不合理的查询条件也会加大内存,如 Group 或大范围 Rate。
-
-我的指标需要多少内存:
-
-*   作者给了一个计算器,设置指标量、采集间隔之类的,计算 Prometheus 需要的理论内存值:[计算公式](https://www.robustperception.io/how-much-ram-does-prometheus-2-x-need-for-cardinality-and-ingestion)
-
-以我们的一个 Prometheus Server为例,本地只保留 2 小时数据,95 万 Series,大概占用的内存如下:
-
-有什么优化方案:
-
-*   Sample 数量超过了 200 万,就不要单实例了,做下分片,然后通过 Victoriametrics,Thanos,Trickster 等方案合并数据。
-*   评估哪些 Metric 和 Label 占用较多,去掉没用的指标。2.14 以上可以看 [Tsdb 状态](https://www.google.com/url?q=https%3A%2F%2Fprometheus.io%2Fdocs%2Fprometheus%2Flatest%2Fquerying%2Fapi%2F%23tsdb-stats&amp;sa=D&amp;sntz=1&amp;usg=AFQjCNFE5AzQxyhzt8SqQLHPUySZl3lNNw)
-*   查询时尽量避免大范围查询,注意时间范围和 Step 的比例,慎用 Group。
-*   如果需要关联查询,先想想能不能通过 Relabel 的方式给原始数据多加个 Label,一条Sql 能查出来的何必用Join,时序数据库不是关系数据库。
-
-Prometheus 内存占用分析:
-
-*   通过 pprof分析:https://www.robustperception.io/optimising-prometheus-2-6-0-memory-usage-with-pprof
-*   1.X 版本的内存:https://www.robustperception.io/how-much-ram-does-my-prometheus-need-for-ingestion
-
-相关 issue:
-
-*   https://groups.google.com/forum/#!searchin/prometheus-users/memory%7Csort:date/prometheus-users/q4oiVGU6Bxo/uifpXVw3CwAJ
-*   https://github.com/prometheus/prometheus/issues/5723
-*   https://github.com/prometheus/prometheus/issues/1881
 
 ## Prometheus 容量规划
 
@@ -385,12 +135,6 @@ rate(prometheus_tsdb_head_samples_appended_total[1h])
 
 关于 Prometheus 存储机制,可以看[这篇](http://www.xuyasong.com/?p=1601)。
 
-## 对 Apiserver 的性能影响
-
-如果你的 Prometheus 使用了 kubernetes\_sd\_config 做服务发现,请求一般会经过集群的 Apiserver,随着规模的变大,需要评估下对 Apiserver性能的影响,尤其是Proxy失败的时候,会导致CPU 升高。当然了,如果单K8S集群规模太大,一般都是拆分集群,不过随时监测下 Apiserver 的进程变化还是有必要的。
-
-在监控Cadvisor、Docker、Kube-Proxy 的 Metric 时,我们一开始选择从 Apiserver Proxy 到节点的对应端口,统一设置比较方便,但后来还是改为了直接拉取节点,Apiserver 仅做服务发现。
-
 ## Rate 的计算逻辑
 
 Prometheus 中的 Counter 类型主要是为了 Rate 而存在的,即计算速率,单纯的 Counter 计数意义不大,因为 Counter 一旦重置,总计数就没有意义了。
@@ -407,53 +151,6 @@ Rate 并非想要捕获每个增量,因为有时候增量会丢失,例如实例�
 
 详细的内容可以看下这个[视频](https://www.youtube.com/watch?reload=9&amp;v=67Ulrq6DxwA)
 
-## 反直觉的 P95 统计
-
-histogram_quantile 是 Prometheus 常用的一个函数,比如经常把某个服务的 P95 响应时间来衡量服务质量。不过它到底是什么意思很难解释得清,特别是面向非技术的同学,会遇到很多“灵魂拷问”。
-
-我们常说 P95(P99,P90都可以) 响应延迟是 100ms,实际上是指对于收集到的所有响应延迟,有 5% 的请求大于 100ms,95% 的请求小于 100ms。Prometheus 里面的 histogram_quantile 函数接收的是 0-1 之间的小数,将这个小数乘以 100 就能很容易得到对应的百分位数,比如 0.95 就对应着 P95,而且还可以高于百分位数的精度,比如 0.9999。
-
-当你用 histogram_quantile 画出响应时间的趋势图时,可能会被问:为什么P95大于或小于我的平均值？
-
-正如中位数可能比平均数大也可能比平均数小,P99 比平均值小也是完全有可能的。通常情况下 P99 几乎总是比平均值要大的,但是如果数据分布比较极端,最大的 1% 可能大得离谱从而拉高了平均值。一种可能的例子:
-
-```bash
-1, 1, ... 1, 901 // 共 100 条数据,平均值=10,P99=1
-```
-
-服务 X 由顺序的 A,B 两个步骤完成,其中 X 的 P99 耗时 100Ms,A 过程 P99 耗时 50Ms,那么推测 B 过程的 P99 耗时情况是？
-
-直觉上来看,因为有 X=A+B,所以答案可能是 50Ms,或者至少应该要小于 50Ms。实际上 B 是可以大于 50Ms 的,只要 A 和 B 最大的 1% 不恰好遇到,B 完全可以有很大的 P99:
-
-```bash
-A = 1, 1, ... 1,  1,  1,  50,  50 // 共 100 条数据,P99=50
-B = 1, 1, ... 1,  1,  1,  99,  99 // 共 100 条数据,P99=99
-X = 2, 2, ... 1, 51, 51, 100, 100 // 共 100 条数据,P99=100
-```
-
-```Bash
-如果让 A 过程最大的 1% 接近 100Ms,我们也能构造出 P99 很小的 B:
-A = 50, 50, ... 50,  50,  99 // 共 100 条数据,P99=50
-B =  1,  1, ...  1,   1,  50 // 共 100 条数据,P99=1
-X = 51, 51, ... 51, 100, 100 // 共 100 条数据,P99=100
-```
-
-所以我们从题目唯一能确定的只有 B 的 P99 应该不能超过 100ms,A 的 P99 耗时 50Ms 这个条件其实没啥用。
-
-类似的疑问很多,因此对于 histogram\_quantile 函数,可能会产生反直觉的一些结果,最好的处理办法是不断试验调整你的 Bucket 的值,保证更多的请求时间落在更细致的区间内,这样的请求时间才有统计意义。
-
-## 慢查询问题
-
-Promql 的基础知识看这篇[文章](http://www.xuyasong.com/?p=1578)
-
-Prometheus 提供了自定义的 Promql 作为查询语句,在 Graph 上调试的时候,会告诉你这条 Sql 的返回时间,如果太慢你就要注意了,可能是你的用法出现了问题。
-
-评估 Prometheus 的整体响应时间,可以用这个默认指标:
-
-```bash
-prometheus_engine_query_duration_seconds{}
-```
-
 一般情况下响应过慢都是Promql 使用不当导致,或者指标规划有问题,如:
 
 *   大量使用 join 来组合指标或者增加 label,如将 kube-state-metric 中的一些 meta label和 node-exporter 中的节点属性 label加入到 cadvisor容器数据里,像统计 pod 内存使用率并按照所属节点的机器类型分类,或按照所属 rs 归类。
@@ -462,58 +159,6 @@ prometheus_engine_query_duration_seconds{}
 *   在使用 rate 时,range duration要大于等于[step](https://www.robustperception.io/step-and-query_range),否则会丢失[部分数据](https://chanjarster.github.io/post/p8s-step-param/)
 *   prometheus 是有基本预测功能的,如`deriv`和`predict_linear`(更准确)可以根据已有数据预测未来趋势
 *   如果比较复杂且耗时的sql,可以使用 record rule 减少指标数量,并使查询效率更高,但不要什么指标都加 record,一半以上的 metric 其实不太会查询到。同时 label 中的值不要加到 record rule 的 name 中。
-
-## 高基数问题 Cardinality
-
-高基数是数据库避不开的一个话题,对于 Mysql 这种 DB 来讲,基数是指特定列或字段中包含的唯一值的数量。基数越低,列中重复的元素越多。对于时序数据库而言,就是 tags、label 这种标签值的数量多少。
-
-比如 Prometheus 中如果有一个指标 `http_request_count{method="get",path="/abc",originIP="1.1.1.1"}`表示访问量,method 表示请求方法,originIP 是客户端 IP,method的枚举值是有限的,但 originIP 却是无限的,加上其他 label 的排列组合就无穷大了,也没有任何关联特征,因此这种高基数不适合作为 Metric 的 label,真要的提取originIP,应该用日志的方式,而不是 Metric 监控
-
-时序数据库会为这些 Label 建立索引,以提高查询性能,以便您可以快速找到与所有指定标签匹配的值。如果值的数量过多,索引是没有意义的,尤其是做 P95 等计算的时候,要扫描大量 Series 数据
-
-官方文档中对于Label 的建议
-
-```bash
-CAUTION: Remember that every unique combination of key-value label pairs represents a new time series, which can dramatically increase the amount of data stored. Do not use labels to store dimensions with high cardinality (many different label values), such as user IDs, email addresses, or other unbounded sets of values.
-```
-
-如何查看当前的Label 分布情况呢,可以使用 Prometheus提供的Tsdb工具。可以使用命令行查看,也可以在 2.16 版本以上的 Prometheus Graph 查看
-
-```bash
-[work@xxx bin]$ ./tsdb analyze ../data/prometheus/
-Block ID: 01E41588AJNGM31SPGHYA3XSXG
-Duration: 2h0m0s
-Series: 955372
-Label names: 301
-Postings (unique label pairs): 30757
-Postings entries (total label pairs): 10842822
-....
-```
-
-top10 高基数的 metric
-
-```bash
-Highest cardinality metric names:
-87176 apiserver_request_latencies_bucket
-59968 apiserver_response_sizes_bucket
-39862 apiserver_request_duration_seconds_bucket
-37555 container_tasks_state
-....
-```
-
-高基数的 label
-
-```bash
-Highest cardinality labels:
-4271 resource_version
-3670 id
-3414 name
-1857 container_id
-1824 __name__
-1297 uid
-1276 pod
-...
-```
 
 ## 找到最大的 metric 或 job
 
@@ -692,21 +337,6 @@ Prometheus 部署之后很少会改动,尤其是做了服务发现,就不需要�
 *   调用 alertmanager api 查询报警事件,进行展示和统计。
 
 对于用户来说,封装 alertmanager yaml 会变的易用,但也会限制其能力,在增加报警配置时,研发和运维需要有一定的配合。如新写了一份自定义的 exporter,要将需要的指标供用户选择,并调整好展示和报警用的 promql。还有报警模板、原生 promql 暴露、用户分组等,需要视用户需求做权衡。
-
-## 错误的高可用设计
-
-有些人提出过这种类型的方案,想提高其扩展性和可用性。  
-
-应用程序将 Metric 推到到消息队列如 Kafaka,然后经过 Exposer 消费中转,再被 Prometheus 拉取。产生这种方案的原因一般是有历史包袱、复用现有组件、想通过 Mq 来提高扩展性。
-
-这种方案有几个问题:
-
-1.  增加了 Queue 组件,多了一层依赖,如果 App与 Queue 之间连接失败,难道要在 App 本地缓存监控数据？
-2.  抓取时间可能会不同步,延迟的数据将会被标记为陈旧数据,当然你可以通过添加时间戳来标识,但就失去了对陈旧数据的[处理逻辑](https://www.robustperception.io/staleness-and-promql)
-3.  扩展性问题:Prometheus 适合大量小目标,而不是一个大目标,如果你把所有数据都放在了 Exposer 中,那么 Prometheus 的单个 Job 拉取就会成为 CPU 瓶颈。这个和 Pushgateway 有些类似,没有特别必要的场景,都不是官方建议的方式。
-4.  缺少了服务发现和拉取控制,Prom 只知道一个 Exposer,不知道具体是哪些 Target,不知道他们的 UP 时间,无法使用 Scrape\_\* 等指标做查询,也无法用[scrape\_limit](https://www.robustperception.io/using-sample_limit-to-avoid-overload)做限制。
-
-如果你的架构和 Prometheus 的设计理念相悖,可能要重新设计一下方案了,否则扩展性和可靠性反而会降低。
 
 ## prometheus-operator 的场景
 
