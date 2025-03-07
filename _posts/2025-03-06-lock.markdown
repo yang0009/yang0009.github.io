@@ -1,0 +1,75 @@
+---
+layout: post
+title:  "定期轮询删除或重建的job面临资源的冲突解决方案-锁文件"
+date:   2025-03-01 16:37:19 +0539
+categories: lock_file
+---
+
+terraform 项目中有些任务需要定期执行，但job 流水线作业资源与进程强绑定关系，进程间需要互斥,避免多个进程同时操作
+例如：1点执行脚本后 1点05分脚本还没有退出，如果是每2分钟启动的定时任务,那么就会有冲突。解决方案常见有两种
+1.认为设置sleep ,根据业务规则自定义，坏处就是运行定时任务脚本时，假如不了解业务的的会无法确认是否执行成功。
+2.创建一个锁文件
+
+
+## 案例
+
+```
+#!/bin/bash
+
+# 配置环境变量
+export TENCENTCLOUD_SECRET_ID="******"
+export TENCENTCLOUD_SECRET_KEY="******"
+export TF_LOG=ERROR                                  # 仅输出错误日志
+
+# 定义关键路径
+TF_DIR="/root/terraform_proj/spot_cvm_2c4g"         # Terraform配置目录
+LOCK_FILE="/tmp/terraform_rotate.lock"              # 防止并发执行锁文件
+LOG_FILE="/var/log/terraform_rotate.log"            # 统一日志文件
+
+# 函数：记录带时间戳的日志
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> $LOG_FILE
+}
+
+# 函数：错误处理并退出
+error_exit() {
+  log "❌ 错误: $1"
+  rm -f $LOCK_FILE
+  exit 1
+}
+
+# 主程序开始
+log "=== 开始执行资源轮转 ==="
+
+# 检查锁文件防止并发
+if [ -f $LOCK_FILE ]; then
+  error_exit "上一个任务仍在运行中，跳过本次执行"
+fi
+touch $LOCK_FILE
+
+# 进入Terraform目录
+cd $TF_DIR || error_exit "无法进入目录 $TF_DIR"
+
+# Step 1: 销毁旧资源
+log "执行 terraform destroy..."
+terraform destroy -auto-approve >> $LOG_FILE 2>&1 
+if [ $? -ne 0 ]; then
+  error_exit "terraform destroy 失败"
+fi
+
+# 等待资源清理完成（根据实际API等待时间调整）
+sleep 300  # 等待5分钟确保资源释放
+
+# Step 2: 重新创建资源
+log "执行 terraform apply..."
+terraform apply -auto-approve >> $LOG_FILE 2>&1
+if [ $? -ne 0 ]; then
+  error_exit "terraform apply 失败"
+fi
+
+# 清理锁文件
+rm -f $LOCK_FILE
+log "✅ 资源轮转完成"
+exit 0
+```
+运行脚本后，会在日志中记录执行时间，并输出执行结果。如果执行过程中出现错误，则会记录错误信息并退出。
