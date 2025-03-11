@@ -81,17 +81,15 @@ exit 0
 # flock 命令
 flock 是一个POSIX兼容的命令，用于实现文件锁。它允许多个进程同时访问一个文件，但只有一个进程可以同时拥有该文件的写入权限。
 1. 安装flock命令：
-```bash
+```
 sudo apt-get install -y procps
 ```
 2. 使用flock命令
-```bash
+```
 #!/bin/bash
 LOCK_FILE="/tmp/mylock.lock"
-
 # 1. 打开文件描述符 200 并关联锁文件
 exec 200>"$LOCK_FILE"
-
 # 2. 尝试获取文件锁（非阻塞模式）
 if flock -n 200; then
     echo "成功获取锁，执行关键操作..."
@@ -101,7 +99,6 @@ else
     echo "无法获取锁，其他进程正在运行"
     exit 1
 fi
-
 # 3. 退出时自动释放锁（无需手动操作）
 trap 'flock -u 200' EXIT
 echo "执行完毕，释放锁"
